@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.physics.shg_model import SHGParams, simulate_shg
-from src.utils.plotting import plot_error_map, plot_shg_curves
+from src.utils.plotting import plot_error_map, plot_fit_comparison, plot_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
 CommandHandler = Callable[[argparse.Namespace], None]
@@ -30,6 +30,18 @@ def build_simulate_parser(subparsers: argparse._SubParsersAction) -> None:
 def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the fit subcommand."""
     parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos.")
+    parser.add_argument(
+        "--normalization",
+        choices=["global", "separate"],
+        default="global",
+        help="Estrategia de normalizacao do erro.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed opcional para reprodutibilidade do otimizador.",
+    )
     parser.set_defaults(handler=handle_fit)
 
 
@@ -79,19 +91,29 @@ def handle_simulate(args: argparse.Namespace) -> None:
     plot_shg_curves(d_nm, i3, i1)
 
 
-def handle_fit(_: argparse.Namespace) -> None:
+def handle_fit(args: argparse.Namespace) -> None:
     """Run the inverse fitting workflow with in-code experimental data."""
     from src.inverse.fitters import run_fit
 
     d_exp, i3_exp, i1_exp, lambda_m = sample_experimental_data()
-    result = run_fit(d_exp, i3_exp, i1_exp, lambda_m)
+    normalization_strategy = args.normalization
+    result = run_fit(
+        d_exp,
+        i3_exp,
+        i1_exp,
+        lambda_m,
+        normalization_strategy=normalization_strategy,
+        seed=args.seed,
+    )
+    plot_fit_comparison(d_exp, i3_exp, i1_exp, result)
     plot_error_map(
         d_exp,
         i3_exp,
         i1_exp,
         lambda_m,
-        n22_fixed=float(result.x[2]),
-        k22_fixed=float(result.x[3]),
+        n22_fixed=float(result.fitted_params.n22w.real),
+        k22_fixed=float(result.fitted_params.n22w.imag),
+        normalization_strategy=normalization_strategy,
     )
 
 

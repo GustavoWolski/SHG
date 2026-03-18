@@ -1,10 +1,18 @@
-"""Fitting routines for SHG parameters."""
+"""Global inverse fitting routines for SHG.
+
+The fitting workflow solves an inverse problem: a direct physical model
+simulates SHG curves for a candidate parameter set, and a global optimizer
+searches the parameter space for the lowest mismatch with the experiment.
+"""
+
+from dataclasses import dataclass
+from typing import Any, Optional
 
 import numpy as np
 import numpy.typing as npt
-from typing import Any
 
-from src.inverse.objective import error_function
+from src.inverse.objective import NormalizationStrategy, build_shg_params, error_function
+from src.physics.shg_model import SHGParams, simulate_shg
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -16,34 +24,94 @@ DEFAULT_BOUNDS: list[tuple[float, float]] = [
 ]
 
 
+@dataclass
+class FitResult:
+    """Result of SHG inverse fitting with a global optimizer."""
+
+    fitted_params: SHGParams
+    final_error: float
+    success: bool
+    n_evaluations: int
+    parameter_vector: FloatArray
+    normalization_strategy: NormalizationStrategy
+    seed: Optional[int]
+    message: str
+    raw_result: Any
+
+
+def simulate_fit_result(fit_result: FitResult, d_nm: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """Simulate SHG curves using the best-fit parameters."""
+    thickness_nm = np.asarray(d_nm, dtype=np.float64)
+    return simulate_shg(fit_result.fitted_params, thickness_nm)
+
+
+def _build_fit_result(
+    optimizer_result: Any,
+    lambda_m: float,
+    normalization_strategy: NormalizationStrategy,
+    seed: Optional[int],
+) -> FitResult:
+    """Convert the raw optimizer output into a typed fitting result."""
+    parameter_vector = np.asarray(optimizer_result.x, dtype=np.float64)
+    fitted_params = build_shg_params(parameter_vector, lambda_m)
+    return FitResult(
+        fitted_params=fitted_params,
+        final_error=float(optimizer_result.fun),
+        success=bool(getattr(optimizer_result, "success", False)),
+        n_evaluations=int(getattr(optimizer_result, "nfev", 0)),
+        parameter_vector=parameter_vector,
+        normalization_strategy=normalization_strategy,
+        seed=seed,
+        message=str(getattr(optimizer_result, "message", "")),
+        raw_result=optimizer_result,
+    )
+
+
+def print_fit_summary(fit_result: FitResult) -> None:
+    """Print a compact summary of the inverse-fitting result."""
+    print("\n=== RESULTADO DO FIT ===")
+    print(f"n21w = {fit_result.fitted_params.n21w.real:.4f}")
+    print(f"k21w = {fit_result.fitted_params.n21w.imag:.4f}")
+    print(f"n22w = {fit_result.fitted_params.n22w.real:.4f}")
+    print(f"k22w = {fit_result.fitted_params.n22w.imag:.4f}")
+    print(f"Erro final = {fit_result.final_error:.6f}")
+    print(f"Sucesso = {fit_result.success}")
+    print(f"Avaliacoes = {fit_result.n_evaluations}")
+    print(f"Normalizacao = {fit_result.normalization_strategy}")
+    print(f"Seed = {fit_result.seed}")
+
+
 def run_fit(
     d_exp: FloatArray,
     i3_exp: FloatArray,
     i1_exp: FloatArray,
     lambda_m: float,
-    bounds: list[tuple[float, float]] | None = None,
-) -> Any:
-    """Run differential evolution for SHG parameters."""
+    bounds: Optional[list[tuple[float, float]]] = None,
+    normalization_strategy: NormalizationStrategy = "global",
+    seed: Optional[int] = None,
+) -> FitResult:
+    """Run differential evolution as the baseline SHG inverse solver."""
     try:
         from scipy.optimize import differential_evolution
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError("scipy is required to run the inverse fitting routine.") from exc
 
-    result = differential_evolution(
+    optimizer_result = differential_evolution(
         error_function,
         bounds=bounds or DEFAULT_BOUNDS,
-        args=(d_exp, i3_exp, i1_exp, lambda_m),
+        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy),
         strategy="best1bin",
         maxiter=100,
         popsize=20,
         polish=True,
+        seed=seed,
     )
 
-    print("\n=== RESULTADO DO FIT ===")
-    print(f"n21w = {result.x[0]:.4f}")
-    print(f"k21w = {result.x[1]:.4f}")
-    print(f"n22w = {result.x[2]:.4f}")
-    print(f"k22w = {result.x[3]:.4f}")
-    print(f"Erro final = {result.fun:.6f}")
-
-    return result
+    fit_result = _build_fit_result(
+        optimizer_result=optimizer_result,
+        lambda_m=lambda_m,
+        normalization_strategy=normalization_strategy,
+        seed=seed,
+    )
+    print_fit_summary(fit_result)
+    return fit_result

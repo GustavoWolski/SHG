@@ -3,7 +3,8 @@
 import numpy as np
 import numpy.typing as npt
 
-from src.inverse.objective import error_function
+from src.inverse.fitters import FitResult, simulate_fit_result
+from src.inverse.objective import NormalizationStrategy, error_function, normalize_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -41,6 +42,7 @@ def plot_error_map(
     lambda_m: float,
     n22_fixed: float = 2.8,
     k22_fixed: float = 0.4,
+    normalization_strategy: NormalizationStrategy = "global",
 ) -> None:
     """Plot the error map varying n21w and k21w."""
     try:
@@ -62,6 +64,7 @@ def plot_error_map(
                 i3_exp,
                 i1_exp,
                 lambda_m,
+                normalization_strategy=normalization_strategy,
             )
 
     plt.figure(figsize=(7, 6))
@@ -75,4 +78,52 @@ def plot_error_map(
     plt.xlabel("n21w")
     plt.ylabel("k21w")
     plt.title("Mapa do Erro")
+    plt.show()
+
+
+def plot_fit_comparison(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    fit_result: FitResult,
+) -> None:
+    """Plot experimental and best-fit simulated SHG curves."""
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("matplotlib is required to generate SHG plots.") from exc
+
+    i3_sim, i1_sim = simulate_fit_result(fit_result, d_exp)
+    normalized_curves = normalize_shg_curves(
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        i3_sim=i3_sim,
+        i1_sim=i1_sim,
+        strategy=fit_result.normalization_strategy,
+    )
+    if normalized_curves is None:
+        raise ValueError("Could not normalize the experimental and fitted curves for plotting.")
+
+    i3_exp_norm, i1_exp_norm, i3_sim_norm, i1_sim_norm = normalized_curves
+
+    fig, axes = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+    axes[0].plot(d_exp, i3_exp_norm, "ok", label="Exp")
+    axes[0].plot(d_exp, i3_sim_norm, "-r", label="Sim")
+    axes[0].set_ylabel("T (norm)")
+    axes[0].grid(True)
+    axes[0].legend()
+
+    axes[1].plot(d_exp, i1_exp_norm, "ok", label="Exp")
+    axes[1].plot(d_exp, i1_sim_norm, "-b", label="Sim")
+    axes[1].set_xlabel("d (nm)")
+    axes[1].set_ylabel("R (norm)")
+    axes[1].grid(True)
+    axes[1].legend()
+
+    fig.suptitle(
+        "Melhor ajuste SHG "
+        f"| erro={fit_result.final_error:.4e} "
+        f"| norm={fit_result.normalization_strategy}"
+    )
+    plt.tight_layout()
     plt.show()
