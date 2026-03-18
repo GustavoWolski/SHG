@@ -8,7 +8,6 @@ Importante:
 
 - os comandos abaixo assumem que voce esta na raiz do projeto
 - o CLI principal atual e `python main.py ...`
-- o subcomando `train-ml` ainda nao foi implementado
 - o fitting via CLI ainda usa dados experimentais internos de exemplo
 
 ## 1. Instalar dependencias
@@ -33,6 +32,12 @@ Se voce ja estiver usando o ambiente do proprio projeto:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+Se estiver em ambiente sem interface grafica e quiser evitar abertura de janelas do `matplotlib`:
+
+```powershell
+$env:MPLBACKEND='Agg'
 ```
 
 ## 2. Validar o modelo fisico
@@ -147,41 +152,10 @@ Saida salva:
 
 ## 6. Treinar o modelo
 
-No estado atual, o treino existe em `src/ml/train.py`, mas nao possui CLI pronto.
-
-Por isso, o treino deve ser executado via Python.
-
-Exemplo minimo:
+Use `train-ml` para transformar um dataset sintetico em um modelo `.npz`.
 
 ```powershell
-@'
-from src.data.loaders import load_synthetic_dataset
-from src.ml.datasets import from_synthetic_dataset
-from src.ml.models import ModelConfig, save_model
-from src.ml.train import TrainingConfig, train_model
-
-dataset = from_synthetic_dataset(load_synthetic_dataset("data/shg_synthetic_dataset.npz"))
-
-model_config = ModelConfig(
-    input_dim=dataset.input_dim,
-    output_dim=dataset.output_dim,
-    hidden_dims=(256, 128),
-)
-
-training_config = TrainingConfig(
-    epochs=300,
-    batch_size=64,
-    learning_rate=1e-3,
-    weight_decay=1e-5,
-    gradient_clip=5.0,
-    seed=42,
-    verbose=True,
-)
-
-training_result = train_model(dataset, model_config, training_config)
-save_model(training_result.model, "models/shg_mlp.npz")
-print(training_result.train_loss_history[-1])
-'@ | python -
+python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --seed 42 --verbose
 ```
 
 Observacoes importantes:
@@ -189,6 +163,23 @@ Observacoes importantes:
 - o projeto nao faz split automatico entre treino, validacao e teste
 - para um estudo serio, separe os dados manualmente
 - o modelo salvo e um arquivo `.npz`
+- o comando tambem salva um resumo JSON com loss final, historico de treino e hiperparametros
+
+Opcoes principais do `train-ml`:
+
+- `--dataset-path`
+- `--model-path`
+- `--summary-path`
+- `--hidden-dims`
+- `--epochs`
+- `--batch-size`
+- `--learning-rate`
+- `--weight-decay`
+- `--gradient-clip`
+- `--seed`
+- `--verbose`
+
+Se voce quiser continuar usando a API Python, o modulo `src/ml/train.py` segue disponivel.
 
 ## 7. Avaliar o modelo
 
@@ -320,9 +311,11 @@ print("validacao ok")
 python main.py generate-dataset --num-samples 1000 --output data/shg_train.npz --seed 42 --normalization global
 ```
 
-### Passo C. Treinar a MLP via Python
+### Passo C. Treinar a MLP via CLI
 
-Use o exemplo da secao 6 e salve em `models/shg_mlp.npz`.
+```powershell
+python main.py train-ml --dataset-path data/shg_train.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --seed 42
+```
 
 ### Passo D. Avaliar no conjunto de teste
 
@@ -356,7 +349,11 @@ pip install matplotlib
 
 ### O comando `train-ml` falha
 
-Isso e esperado hoje. Ele ainda e apenas um placeholder no CLI.
+Verifique:
+
+- se `--dataset-path` aponta para um `.npz` valido gerado pelo projeto
+- se `--hidden-dims` contem apenas inteiros positivos
+- se `--epochs`, `--batch-size` e `--learning-rate` sao positivos
 
 ### O comando `fit` nao usa meus dados reais
 
@@ -377,3 +374,19 @@ Mesmo que o pipeline rode, ainda e importante lembrar:
 - ha um ponto teorico no modulo fisico marcado como `TODO`
 - o treino e feito sobre dados sinteticos, nao sobre experimento real
 - a qualidade dos resultados depende fortemente dos bounds escolhidos
+
+## 13. Smoke tests do repositorio
+
+O projeto agora possui um conjunto pequeno de testes de smoke em `tests/test_smoke.py`.
+
+Para rodar:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Esses testes nao cobrem todo o projeto, mas validam o essencial:
+
+- consistencia numerica da simulacao padrao
+- geracao e recarga de dataset sintetico
+- treino curto, salvamento, recarga e avaliacao do pipeline de ML

@@ -48,13 +48,13 @@ O projeto ja possui:
 - simulacao SHG via CLI
 - fitting classico via CLI
 - geracao de dataset sintetico via CLI
+- treino de MLP via CLI
 - avaliacao de modelo ML via CLI
 - comparacao de metodos via CLI
-- treino de MLP implementado em modulo Python
+- treino de MLP via modulo Python
 
 O projeto ainda nao possui:
 
-- subcomando `train-ml` funcional no CLI
 - fitting via arquivo experimental externo no CLI
 - pipeline automatico de split treino/validacao/teste
 - empacotamento formal com `pyproject.toml` ou `requirements.txt`
@@ -121,6 +121,20 @@ Se voce ja vai usar o ambiente que esta dentro do repositorio:
 .venv\Scripts\Activate.ps1
 ```
 
+## Validacao Rapida
+
+Para uma checagem automatizada e barata do estado do projeto:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Esse conjunto atual cobre:
+
+- validacao basica do modelo fisico
+- geracao e recarga de dataset sintetico
+- treino curto, persistencia e avaliacao do pipeline de ML
+
 ## Subcomandos CLI Disponiveis
 
 Os subcomandos reais hoje sao:
@@ -128,14 +142,9 @@ Os subcomandos reais hoje sao:
 - `simulate`
 - `fit`
 - `generate-dataset`
+- `train-ml`
 - `evaluate-ml`
 - `compare-methods`
-
-Existe tambem:
-
-- `train-ml`
-
-mas ele ainda e apenas placeholder e nao executa treino pelo CLI.
 
 ## Como Rodar Cada Subcomando
 
@@ -174,7 +183,21 @@ Esse comando salva um `.npz` contendo:
 - `parameters`
 - metadados como `lambda`, bounds e seed
 
-### 4. Avaliar um modelo de ML treinado
+### 4. Treinar um modelo de ML
+
+```powershell
+python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --seed 42
+```
+
+Esse comando:
+
+- carrega o dataset sintetico salvo em `.npz`
+- monta a MLP com as camadas ocultas informadas
+- executa o treino com augmentacao de mascaras
+- salva o modelo treinado
+- salva um resumo JSON com historico de loss e hiperparametros
+
+### 5. Avaliar um modelo de ML treinado
 
 ```powershell
 python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/evaluate_ml
@@ -190,7 +213,7 @@ Esse comando:
   - `i1_only`
 - salva metricas e figuras em `outputs/evaluate_ml` por padrao
 
-### 5. Comparar metodos
+### 6. Comparar metodos
 
 ```powershell
 python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/compare_methods --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1 --max-samples 10 --classical-seed 3
@@ -208,9 +231,9 @@ e salva:
 - `comparison_summary.csv`
 - figuras de comparacao
 
-## Exemplo de Treino do Modelo
+## Treino Via Modulo Python
 
-Hoje o treino existe em modulo Python, nao em CLI. Um exemplo pratico:
+O treino tambem continua disponivel como API Python. Exemplo:
 
 ```powershell
 @'
@@ -257,11 +280,13 @@ Observacao importante:
 ### Modelos treinados
 
 - nao existe pasta fixa obrigatoria
-- o modelo e salvo no caminho escolhido pelo usuario ao chamar `save_model(...)`
+- o modelo e salvo no caminho escolhido pelo usuario ao chamar `train-ml` ou `save_model(...)`
 - exemplos desta documentacao usam `models/shg_mlp.npz`
 
 ### Resultados e figuras
 
+- treino ML:
+  - resumo por padrao em `outputs/train_ml/training_summary.json`
 - avaliacao ML:
   - por padrao em `outputs/evaluate_ml`
 - comparacao de metodos:
@@ -291,8 +316,8 @@ simulacao -> fitting -> dataset sintetico -> treino -> avaliacao -> comparacao
 
 Observacao importante:
 
-- hoje o passo de treino existe, mas nao tem CLI pronto
-- por isso o fluxo completo mistura CLI e chamadas Python
+- o treino pode ser feito por CLI ou por API Python
+- o split entre treino, validacao e teste continua sendo responsabilidade do usuario
 
 ## Troubleshooting
 
@@ -320,6 +345,16 @@ Solucao:
 pip install matplotlib
 ```
 
+### "Estou rodando em ambiente sem interface grafica"
+
+Se voce estiver em servidor, CI ou validacao automatizada, rode os comandos com:
+
+```powershell
+$env:MPLBACKEND='Agg'
+```
+
+Assim o `matplotlib` usa backend nao interativo e os comandos com graficos nao tentam abrir janela.
+
 ### "fit esta rodando muito devagar"
 
 Causa:
@@ -345,12 +380,17 @@ Confira:
 - `save_model(...)` para gerar o modelo
 - `generate-dataset` ou `save_synthetic_dataset(...)` para gerar o dataset
 
-### "train-ml nao roda"
+### "train-ml falha"
 
-Isso e esperado no estado atual.
+Causas comuns:
 
-- o subcomando existe apenas como placeholder
-- o treino real deve ser executado pelo modulo `src/ml/train.py`
+- `--dataset-path` aponta para um arquivo que nao e um dataset sintetico valido
+- os hiperparametros passados sao invalidos, por exemplo dimensoes ocultas nao positivas
+
+Confira:
+
+- se o arquivo foi gerado por `generate-dataset`
+- se `--hidden-dims`, `--epochs`, `--batch-size` e `--learning-rate` sao coerentes
 
 ### "fit nao usa meus dados experimentais"
 
@@ -364,7 +404,6 @@ Isso tambem e esperado no estado atual.
 Para evitar interpretacoes erradas, hoje o projeto nao faz automaticamente:
 
 - leitura de dados experimentais reais para o fitting CLI
-- treino por subcomando `train-ml`
 - split automatico entre treino, validacao e teste
 - busca automatica de hiperparametros da rede
 - garantia de validade fisica fora dos bounds escolhidos

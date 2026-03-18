@@ -217,9 +217,8 @@ Papel:
 
 Importante:
 
-- o treino existe no codigo
-- o subcomando `train-ml` ainda nao foi implementado no CLI
-- hoje o treino deve ser chamado via Python
+- o treino pode ser chamado via CLI (`train-ml`) ou via API Python
+- o modulo tambem salva um resumo JSON do treinamento para rastreabilidade
 
 #### `src/ml/evaluate.py`
 
@@ -296,12 +295,9 @@ Subcomandos reais hoje:
 - `simulate`
 - `fit`
 - `generate-dataset`
+- `train-ml`
 - `evaluate-ml`
 - `compare-methods`
-
-Subcomando placeholder:
-
-- `train-ml`
 
 #### `main.py`
 
@@ -347,6 +343,18 @@ dataset sintetico
 -> [i3, i1, mascara]
 -> MLP
 -> parametros previstos
+```
+
+### 4a. Fluxo do treinamento via CLI
+
+```text
+dataset sintetico em .npz
+-> train-ml
+-> load_synthetic_dataset(...)
+-> from_synthetic_dataset(...)
+-> ModelConfig + TrainingConfig
+-> train_model(...)
+-> modelo .npz + resumo JSON
 ```
 
 ### 5. Fluxo de avaliacao
@@ -486,7 +494,6 @@ Exemplos:
 
 O projeto esta funcional, mas ainda tem limites claros:
 
-- `train-ml` ainda nao existe como subcomando operacional
 - `fit` ainda nao recebe arquivo experimental externo
 - nao ha pipeline nativo de split treino/validacao/teste
 - a MLP e simples e implementada manualmente em `numpy`

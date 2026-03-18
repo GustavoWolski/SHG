@@ -5,6 +5,7 @@ __pycache__/
 
 #Dataset
 *.npz
+outputs/
 
 # C extensions
 *.so

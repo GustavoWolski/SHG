@@ -1,5 +1,7 @@
 """Plotting helpers for SHG analysis."""
 
+from typing import Any
+
 import numpy as np
 import numpy.typing as npt
 
@@ -7,6 +9,14 @@ from src.inverse.fitters import FitResult, simulate_fit_result
 from src.inverse.objective import NormalizationStrategy, error_function, normalize_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
+
+
+def _show_or_close_figure(plt: Any, figure: Any) -> None:
+    """Show figures only on interactive backends and always release resources."""
+    backend_name = str(plt.get_backend()).lower()
+    if "agg" not in backend_name:
+        plt.show()
+    plt.close(figure)
 
 
 def plot_shg_curves(d_nm: FloatArray, i3: FloatArray, i1: FloatArray) -> None:
@@ -32,7 +42,7 @@ def plot_shg_curves(d_nm: FloatArray, i3: FloatArray, i1: FloatArray) -> None:
 
     fig.suptitle("SHG sim (T/R)")
     plt.tight_layout()
-    plt.show()
+    _show_or_close_figure(plt, fig)
 
 
 def plot_error_map(
@@ -67,18 +77,18 @@ def plot_error_map(
                 normalization_strategy=normalization_strategy,
             )
 
-    plt.figure(figsize=(7, 6))
-    plt.imshow(
+    fig, axis = plt.subplots(figsize=(7, 6))
+    image = axis.imshow(
         error_map,
         origin="lower",
         extent=[n_vals.min(), n_vals.max(), k_vals.min(), k_vals.max()],
         aspect="auto",
     )
-    plt.colorbar(label="Erro")
-    plt.xlabel("n21w")
-    plt.ylabel("k21w")
-    plt.title("Mapa do Erro")
-    plt.show()
+    fig.colorbar(image, ax=axis, label="Erro")
+    axis.set_xlabel("n21w")
+    axis.set_ylabel("k21w")
+    axis.set_title("Mapa do Erro")
+    _show_or_close_figure(plt, fig)
 
 
 def plot_fit_comparison(
@@ -126,4 +136,4 @@ def plot_fit_comparison(
         f"| norm={fit_result.normalization_strategy}"
     )
     plt.tight_layout()
-    plt.show()
+    _show_or_close_figure(plt, fig)

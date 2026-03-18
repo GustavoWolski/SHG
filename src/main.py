@@ -1,4 +1,4 @@
-"""CLI entrypoint for SHG simulation and inverse fitting."""
+"""CLI entrypoint for SHG simulation, inversion and ML workflows."""
 
 import argparse
 from collections.abc import Callable
@@ -78,6 +78,43 @@ def build_generate_dataset_parser(subparsers: argparse._SubParsersAction) -> Non
         help="Desabilita a barra simples de progresso no terminal.",
     )
     parser.set_defaults(handler=handle_generate_dataset)
+
+
+def build_train_ml_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the MLP training subcommand."""
+    parser = subparsers.add_parser("train-ml", help="Treina um modelo de ML a partir de dataset sintetico.")
+    parser.add_argument("--dataset-path", type=str, required=True, help="Arquivo NPZ com o dataset sintetico.")
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default="models/shg_mlp.npz",
+        help="Arquivo NPZ de saida para o modelo treinado.",
+    )
+    parser.add_argument(
+        "--summary-path",
+        type=str,
+        default="outputs/train_ml/training_summary.json",
+        help="Arquivo JSON para salvar o resumo do treinamento.",
+    )
+    parser.add_argument(
+        "--hidden-dims",
+        type=int,
+        nargs="+",
+        default=[256, 128],
+        help="Dimensoes das camadas ocultas da MLP.",
+    )
+    parser.add_argument("--epochs", type=int, default=300, help="Numero de epocas de treinamento.")
+    parser.add_argument("--batch-size", type=int, default=64, help="Tamanho do mini-batch.")
+    parser.add_argument("--learning-rate", type=float, default=1e-3, help="Taxa de aprendizado.")
+    parser.add_argument("--weight-decay", type=float, default=1e-5, help="Regularizacao L2.")
+    parser.add_argument("--gradient-clip", type=float, default=5.0, help="Clip global do gradiente.")
+    parser.add_argument("--seed", type=int, default=None, help="Seed opcional para reprodutibilidade.")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Exibe o log resumido do treinamento ao longo das epocas.",
+    )
+    parser.set_defaults(handler=handle_train_ml)
 
 
 def build_evaluate_ml_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -160,12 +197,6 @@ def build_compare_methods_parser(subparsers: argparse._SubParsersAction) -> None
     parser.set_defaults(handler=handle_compare_methods)
 
 
-def build_future_parser(subparsers: argparse._SubParsersAction, command_name: str, help_text: str) -> None:
-    """Register a future subcommand placeholder."""
-    parser = subparsers.add_parser(command_name, help=help_text)
-    parser.set_defaults(handler=handle_not_implemented, command_name=command_name)
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser with subcommands."""
     parser = argparse.ArgumentParser(description="SHG sim (adaptado do gerador em MATLAB).")
@@ -174,7 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_simulate_parser(subparsers)
     build_fit_parser(subparsers)
     build_generate_dataset_parser(subparsers)
-    build_future_parser(subparsers, "train-ml", "Prepara o treinamento de modelos de ML.")
+    build_train_ml_parser(subparsers)
     build_evaluate_ml_parser(subparsers)
     build_compare_methods_parser(subparsers)
 
@@ -253,6 +284,61 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
     print(f"Dataset salvo em: {output_path}")
     print(f"Formato curves: {dataset.curves.shape}")
     print(f"Formato parameters: {dataset.parameters.shape}")
+
+
+def handle_train_ml(args: argparse.Namespace) -> None:
+    """Train a masked-input MLP from a synthetic SHG dataset."""
+    from src.ml.models import ModelConfig, save_model
+    from src.ml.train import (
+        TrainingConfig,
+        build_training_summary,
+        save_training_summary,
+        train_model,
+    )
+
+    if any(hidden_dim <= 0 for hidden_dim in args.hidden_dims):
+        raise ValueError("--hidden-dims must contain only positive integers.")
+
+    synthetic_dataset = load_synthetic_dataset(args.dataset_path)
+    dataset = from_synthetic_dataset(synthetic_dataset)
+
+    model_config = ModelConfig(
+        input_dim=dataset.input_dim,
+        output_dim=dataset.output_dim,
+        hidden_dims=tuple(args.hidden_dims),
+    )
+    training_config = TrainingConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        gradient_clip=args.gradient_clip,
+        seed=args.seed,
+        verbose=args.verbose,
+    )
+
+    training_result = train_model(
+        dataset=dataset,
+        model_config=model_config,
+        training_config=training_config,
+    )
+    model_path = save_model(training_result.model, args.model_path)
+    summary = build_training_summary(
+        dataset=dataset,
+        model_config=model_config,
+        training_config=training_config,
+        training_result=training_result,
+        dataset_path=args.dataset_path,
+        model_path=str(model_path),
+    )
+    summary_path = save_training_summary(summary, args.summary_path)
+
+    print(f"Modelo salvo em: {model_path}")
+    print(f"Resumo salvo em: {summary_path}")
+    print(f"Amostras usadas: {dataset.num_samples}")
+    print(f"Entrada={dataset.input_dim} | Saida={dataset.output_dim}")
+    print(f"Camadas ocultas: {model_config.hidden_dims}")
+    print(f"Loss final de treino: {summary.final_train_loss:.6f}")
 
 
 def handle_evaluate_ml(args: argparse.Namespace) -> None:
@@ -334,11 +420,6 @@ def handle_compare_methods(args: argparse.Namespace) -> None:
             f"Erro_total={reconstruction.mean_total_error:.6e} "
             f"Falhas={reconstruction.simulation_failures}"
         )
-
-
-def handle_not_implemented(args: argparse.Namespace) -> None:
-    """Report a future subcommand placeholder."""
-    raise SystemExit(f"Subcomando '{args.command_name}' ainda nao foi implementado.")
 
 
 def resolve_handler(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Optional[CommandHandler]:

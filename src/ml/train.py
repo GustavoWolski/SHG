@@ -1,6 +1,8 @@
 """Training entrypoints for masked-input SHG MLP models."""
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -8,6 +10,7 @@ import numpy.typing as npt
 
 from src.ml.datasets import SHGDataset, build_input_features, sample_augmentation_masks
 from src.ml.models import MLPRegressor, ModelConfig, build_model
+from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -31,6 +34,86 @@ class TrainingResult:
 
     model: MLPRegressor
     train_loss_history: list[float]
+
+
+@dataclass
+class TrainingSummary:
+    """Compact JSON-friendly summary of one MLP training run."""
+
+    dataset_path: Optional[str]
+    model_path: Optional[str]
+    num_samples: int
+    curve_length: int
+    input_dim: int
+    output_dim: int
+    hidden_dims: tuple[int, ...]
+    epochs: int
+    batch_size: int
+    learning_rate: float
+    weight_decay: float
+    gradient_clip: float
+    seed: Optional[int]
+    final_train_loss: float
+    train_loss_history: list[float]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert the training summary into a JSON-serializable dictionary."""
+        return {
+            "dataset_path": self.dataset_path,
+            "model_path": self.model_path,
+            "num_samples": self.num_samples,
+            "curve_length": self.curve_length,
+            "input_dim": self.input_dim,
+            "output_dim": self.output_dim,
+            "hidden_dims": list(self.hidden_dims),
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+            "learning_rate": self.learning_rate,
+            "weight_decay": self.weight_decay,
+            "gradient_clip": self.gradient_clip,
+            "seed": self.seed,
+            "final_train_loss": self.final_train_loss,
+            "train_loss_history": self.train_loss_history,
+        }
+
+
+def build_training_summary(
+    dataset: SHGDataset,
+    model_config: ModelConfig,
+    training_config: TrainingConfig,
+    training_result: TrainingResult,
+    dataset_path: str | None = None,
+    model_path: str | None = None,
+) -> TrainingSummary:
+    """Build a compact summary of one SHG MLP training run."""
+    if not training_result.train_loss_history:
+        raise ValueError("training_result.train_loss_history must not be empty.")
+
+    return TrainingSummary(
+        dataset_path=dataset_path,
+        model_path=model_path,
+        num_samples=dataset.num_samples,
+        curve_length=dataset.curve_length,
+        input_dim=model_config.input_dim,
+        output_dim=model_config.output_dim,
+        hidden_dims=model_config.hidden_dims,
+        epochs=training_config.epochs,
+        batch_size=training_config.batch_size,
+        learning_rate=training_config.learning_rate,
+        weight_decay=training_config.weight_decay,
+        gradient_clip=training_config.gradient_clip,
+        seed=training_config.seed,
+        final_train_loss=float(training_result.train_loss_history[-1]),
+        train_loss_history=[float(loss) for loss in training_result.train_loss_history],
+    )
+
+
+def save_training_summary(summary: TrainingSummary, file_path: str | Path) -> Path:
+    """Save a compact MLP training summary as JSON."""
+    output_path = Path(file_path)
+    ensure_directory(output_path.parent)
+    output_path.write_text(json.dumps(summary.to_dict(), indent=2), encoding="utf-8")
+    return output_path
 
 
 def _normalize_columns(values: FloatArray) -> tuple[FloatArray, FloatArray, FloatArray]:
@@ -120,10 +203,24 @@ def train_model(
 ) -> TrainingResult:
     """Train an MLP on SHG curves with random missing-channel augmentation."""
     config = training_config or TrainingConfig()
+    if dataset.num_samples <= 0:
+        raise ValueError("dataset must contain at least one sample.")
     if model_config.input_dim != dataset.input_dim:
         raise ValueError("model_config.input_dim does not match the dataset feature size.")
     if model_config.output_dim != dataset.output_dim:
         raise ValueError("model_config.output_dim does not match the dataset target size.")
+    if any(hidden_dim <= 0 for hidden_dim in model_config.hidden_dims):
+        raise ValueError("model_config.hidden_dims must contain only positive values.")
+    if config.epochs <= 0:
+        raise ValueError("training_config.epochs must be positive.")
+    if config.batch_size <= 0:
+        raise ValueError("training_config.batch_size must be positive.")
+    if config.learning_rate <= 0.0:
+        raise ValueError("training_config.learning_rate must be positive.")
+    if config.weight_decay < 0.0:
+        raise ValueError("training_config.weight_decay must be non-negative.")
+    if config.gradient_clip < 0.0:
+        raise ValueError("training_config.gradient_clip must be non-negative.")
 
     rng = np.random.default_rng(config.seed)
     model = build_model(model_config, seed=config.seed)
