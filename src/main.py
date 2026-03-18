@@ -8,6 +8,9 @@ import numpy as np
 import numpy.typing as npt
 
 from src.data.synthetic_generator import DEFAULT_PARAMETER_BOUNDS
+from src.data.loaders import load_synthetic_dataset
+from src.ml.datasets import from_synthetic_dataset
+from src.ml.models import load_model
 from src.physics.shg_model import SHGParams, simulate_shg
 from src.utils.plotting import plot_error_map, plot_fit_comparison, plot_shg_curves
 
@@ -77,6 +80,31 @@ def build_generate_dataset_parser(subparsers: argparse._SubParsersAction) -> Non
     parser.set_defaults(handler=handle_generate_dataset)
 
 
+def build_evaluate_ml_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the ML evaluation subcommand."""
+    parser = subparsers.add_parser("evaluate-ml", help="Avalia um modelo de ML em dataset de teste.")
+    parser.add_argument("--model-path", type=str, required=True, help="Arquivo NPZ com o modelo treinado.")
+    parser.add_argument("--dataset-path", type=str, required=True, help="Arquivo NPZ com o dataset de teste.")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="outputs/evaluate_ml",
+        help="Diretorio para salvar metricas e figuras.",
+    )
+    parser.add_argument(
+        "--examples-per-group",
+        type=int,
+        default=2,
+        help="Numero de exemplos bons/medianos/ruins para plotar por cenario.",
+    )
+    parser.add_argument(
+        "--no-figures",
+        action="store_true",
+        help="Nao salva figuras, apenas metricas numericas.",
+    )
+    parser.set_defaults(handler=handle_evaluate_ml)
+
+
 def build_future_parser(subparsers: argparse._SubParsersAction, command_name: str, help_text: str) -> None:
     """Register a future subcommand placeholder."""
     parser = subparsers.add_parser(command_name, help=help_text)
@@ -92,7 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_fit_parser(subparsers)
     build_generate_dataset_parser(subparsers)
     build_future_parser(subparsers, "train-ml", "Prepara o treinamento de modelos de ML.")
-    build_future_parser(subparsers, "evaluate-ml", "Prepara a avaliacao de modelos de ML.")
+    build_evaluate_ml_parser(subparsers)
 
     return parser
 
@@ -169,6 +197,39 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
     print(f"Dataset salvo em: {output_path}")
     print(f"Formato curves: {dataset.curves.shape}")
     print(f"Formato parameters: {dataset.parameters.shape}")
+
+
+def handle_evaluate_ml(args: argparse.Namespace) -> None:
+    """Evaluate a trained ML model on a test SHG dataset."""
+    from src.ml.evaluate import evaluate_model
+
+    dataset = from_synthetic_dataset(load_synthetic_dataset(args.dataset_path))
+    model = load_model(args.model_path)
+    report = evaluate_model(
+        model=model,
+        dataset=dataset,
+        output_dir=args.output_dir,
+        save_figures=not args.no_figures,
+        examples_per_group=args.examples_per_group,
+    )
+
+    for scenario_name, scenario in report.scenarios.items():
+        print(f"\n=== {scenario_name} ===")
+        for parameter_name, metrics in scenario.parameter_metrics.items():
+            print(
+                f"{parameter_name}: "
+                f"MAE={metrics.mae:.6f} "
+                f"RMSE={metrics.rmse:.6f} "
+                f"R2={metrics.r2:.6f}"
+            )
+        reconstruction = scenario.reconstruction_metrics
+        print(
+            "Reconstrucao: "
+            f"MSE_i3={reconstruction.mse_i3:.6e} "
+            f"MSE_i1={reconstruction.mse_i1:.6e} "
+            f"Erro_total={reconstruction.mean_total_error:.6e} "
+            f"Falhas={reconstruction.simulation_failures}"
+        )
 
 
 def handle_not_implemented(args: argparse.Namespace) -> None:

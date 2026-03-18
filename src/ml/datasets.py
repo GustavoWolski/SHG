@@ -20,6 +20,7 @@ class SHGDataset:
     """Dataset with SHG curves and parameter targets."""
 
     d_nm: FloatArray
+    lambda_m: float
     i3: FloatArray
     i1: FloatArray
     targets: FloatArray
@@ -49,6 +50,7 @@ def from_synthetic_dataset(dataset: SyntheticSHGDataset) -> SHGDataset:
     """Convert a saved/generated synthetic dataset into the ML dataset format."""
     return SHGDataset(
         d_nm=np.asarray(dataset.d_nm, dtype=np.float64),
+        lambda_m=float(dataset.lambda_m),
         i3=np.asarray(dataset.i3, dtype=np.float64),
         i1=np.asarray(dataset.i1, dtype=np.float64),
         targets=np.asarray(dataset.parameters, dtype=np.float64),

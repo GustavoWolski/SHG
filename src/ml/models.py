@@ -1,10 +1,14 @@
 """Simple MLP definitions for SHG inverse regression."""
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
+
+from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -65,3 +69,59 @@ def build_model(config: ModelConfig, seed: Optional[int] = None) -> MLPRegressor
         target_std=np.ones(config.output_dim, dtype=np.float64),
         config=config,
     )
+
+
+def save_model(model: MLPRegressor, file_path: str | Path) -> Path:
+    """Save a trained MLP regressor as a compressed NPZ archive."""
+    output_path = Path(file_path)
+    if output_path.suffix.lower() != ".npz":
+        output_path = output_path.with_suffix(".npz")
+    ensure_directory(output_path.parent)
+
+    metadata = {
+        "input_dim": model.config.input_dim,
+        "output_dim": model.config.output_dim,
+        "hidden_dims": list(model.config.hidden_dims),
+        "num_layers": len(model.weights),
+    }
+    arrays: dict[str, np.ndarray] = {
+        "input_mean": model.input_mean,
+        "input_std": model.input_std,
+        "target_mean": model.target_mean,
+        "target_std": model.target_std,
+        "metadata_json": np.array(json.dumps(metadata)),
+    }
+
+    for layer_index, (weight, bias) in enumerate(zip(model.weights, model.biases)):
+        arrays[f"weight_{layer_index}"] = weight
+        arrays[f"bias_{layer_index}"] = bias
+
+    np.savez_compressed(output_path, **arrays)
+    return output_path
+
+
+def load_model(file_path: str | Path) -> MLPRegressor:
+    """Load a trained MLP regressor from a compressed NPZ archive."""
+    with np.load(Path(file_path), allow_pickle=False) as data:
+        metadata = json.loads(str(data["metadata_json"].item()))
+        config = ModelConfig(
+            input_dim=int(metadata["input_dim"]),
+            output_dim=int(metadata["output_dim"]),
+            hidden_dims=tuple(int(value) for value in metadata["hidden_dims"]),
+        )
+
+        weights: list[FloatArray] = []
+        biases: list[FloatArray] = []
+        for layer_index in range(int(metadata["num_layers"])):
+            weights.append(np.asarray(data[f"weight_{layer_index}"], dtype=np.float64))
+            biases.append(np.asarray(data[f"bias_{layer_index}"], dtype=np.float64))
+
+        return MLPRegressor(
+            weights=weights,
+            biases=biases,
+            input_mean=np.asarray(data["input_mean"], dtype=np.float64),
+            input_std=np.asarray(data["input_std"], dtype=np.float64),
+            target_mean=np.asarray(data["target_mean"], dtype=np.float64),
+            target_std=np.asarray(data["target_std"], dtype=np.float64),
+            config=config,
+        )
