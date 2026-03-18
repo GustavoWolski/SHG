@@ -37,6 +37,7 @@ class FitResult:
     seed: Optional[int]
     message: str
     raw_result: Any
+    optimizer_name: str
 
 
 def simulate_fit_result(fit_result: FitResult, d_nm: FloatArray) -> tuple[FloatArray, FloatArray]:
@@ -50,6 +51,7 @@ def _build_fit_result(
     lambda_m: float,
     normalization_strategy: NormalizationStrategy,
     seed: Optional[int],
+    optimizer_name: str,
 ) -> FitResult:
     """Convert the raw optimizer output into a typed fitting result."""
     parameter_vector = np.asarray(optimizer_result.x, dtype=np.float64)
@@ -64,12 +66,14 @@ def _build_fit_result(
         seed=seed,
         message=str(getattr(optimizer_result, "message", "")),
         raw_result=optimizer_result,
+        optimizer_name=optimizer_name,
     )
 
 
 def print_fit_summary(fit_result: FitResult) -> None:
     """Print a compact summary of the inverse-fitting result."""
     print("\n=== RESULTADO DO FIT ===")
+    print(f"Otimizador = {fit_result.optimizer_name}")
     print(f"n21w = {fit_result.fitted_params.n21w.real:.4f}")
     print(f"k21w = {fit_result.fitted_params.n21w.imag:.4f}")
     print(f"n22w = {fit_result.fitted_params.n22w.real:.4f}")
@@ -89,6 +93,7 @@ def run_fit(
     bounds: Optional[list[tuple[float, float]]] = None,
     normalization_strategy: NormalizationStrategy = "global",
     seed: Optional[int] = None,
+    verbose: bool = True,
 ) -> FitResult:
     """Run differential evolution as the baseline SHG inverse solver."""
     try:
@@ -112,6 +117,50 @@ def run_fit(
         lambda_m=lambda_m,
         normalization_strategy=normalization_strategy,
         seed=seed,
+        optimizer_name="differential_evolution",
     )
-    print_fit_summary(fit_result)
+    if verbose:
+        print_fit_summary(fit_result)
+    return fit_result
+
+
+def refine_fit_locally(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    lambda_m: float,
+    initial_guess: FloatArray,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    normalization_strategy: NormalizationStrategy = "global",
+    verbose: bool = False,
+) -> FitResult:
+    """Refine SHG parameters locally starting from an informed initial guess."""
+    try:
+        from scipy.optimize import minimize
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("scipy is required to run the local refinement routine.") from exc
+
+    local_bounds = bounds or DEFAULT_BOUNDS
+    clipped_initial_guess = np.array(
+        [np.clip(initial_guess[index], local_bounds[index][0], local_bounds[index][1]) for index in range(len(local_bounds))],
+        dtype=np.float64,
+    )
+
+    optimizer_result = minimize(
+        error_function,
+        x0=clipped_initial_guess,
+        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy),
+        method="L-BFGS-B",
+        bounds=local_bounds,
+    )
+
+    fit_result = _build_fit_result(
+        optimizer_result=optimizer_result,
+        lambda_m=lambda_m,
+        normalization_strategy=normalization_strategy,
+        seed=None,
+        optimizer_name="L-BFGS-B",
+    )
+    if verbose:
+        print_fit_summary(fit_result)
     return fit_result

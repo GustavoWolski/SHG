@@ -97,3 +97,15 @@ def build_input_features(i3: FloatArray, i1: FloatArray, masks: MaskArray) -> Fl
     masked_i3 = i3_array * mask_array[:, [0]]
     masked_i1 = i1_array * mask_array[:, [1]]
     return np.concatenate((masked_i3, masked_i1, mask_array), axis=1)
+
+
+def subset_dataset(dataset: SHGDataset, indices: np.ndarray) -> SHGDataset:
+    """Create a dataset view restricted to the selected sample indices."""
+    selected_indices = np.asarray(indices, dtype=np.int64)
+    return SHGDataset(
+        d_nm=np.asarray(dataset.d_nm, dtype=np.float64),
+        lambda_m=float(dataset.lambda_m),
+        i3=np.asarray(dataset.i3[selected_indices], dtype=np.float64),
+        i1=np.asarray(dataset.i1[selected_indices], dtype=np.float64),
+        targets=np.asarray(dataset.targets[selected_indices], dtype=np.float64),
+    )
