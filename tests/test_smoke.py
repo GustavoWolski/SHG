@@ -6,13 +6,15 @@ import unittest
 
 import numpy as np
 
-from src.data.loaders import load_synthetic_dataset
+from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
 from src.data.synthetic_generator import generate_synthetic_dataset, save_synthetic_dataset
+from src.inverse.objective import error_function
 from src.main import build_parser, resolve_handler
-from src.ml.datasets import from_synthetic_dataset
+from src.ml.datasets import from_synthetic_dataset, split_dataset
 from src.ml.evaluate import evaluate_model
 from src.ml.models import ModelConfig, load_model, save_model
 from src.ml.train import TrainingConfig, train_model
+from src.physics.shg_model import SHGParams, simulate_shg
 from src.physics.shg_model import validate_default_simulation
 
 
@@ -52,6 +54,66 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(reloaded.parameters.shape, dataset.parameters.shape)
         self.assertEqual(reloaded.normalization, "global")
 
+    def test_experimental_loader_and_split(self) -> None:
+        """External experimental files and automatic dataset split should be valid."""
+        thickness_nm = np.arange(0.0, 65.0, 5.0, dtype=np.float64)
+        synthetic_dataset = generate_synthetic_dataset(
+            num_samples=12,
+            d_nm=thickness_nm,
+            lambda_m=1560e-9,
+            seed=17,
+            normalization="global",
+            show_progress=False,
+        )
+        dataset = from_synthetic_dataset(synthetic_dataset)
+        dataset_split = split_dataset(dataset, seed=17)
+
+        self.assertEqual(dataset_split.train.num_samples + dataset_split.validation.num_samples + dataset_split.test.num_samples, dataset.num_samples)
+        self.assertGreater(dataset_split.train.num_samples, 0)
+        self.assertGreater(dataset_split.validation.num_samples, 0)
+        self.assertGreater(dataset_split.test.num_samples, 0)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_path = Path(temporary_directory) / "experimental.csv"
+            data_path.write_text("0,0.10,\n5,,0.20\n10,0.30,0.40\n15,,\n", encoding="utf-8")
+            loaded = load_experimental_shg_data(data_path)
+
+        self.assertEqual(loaded.d_nm.shape, (4,))
+        self.assertEqual(loaded.i3.shape, (4,))
+        self.assertEqual(loaded.i1.shape, (4,))
+        self.assertTrue(np.array_equal(loaded.i3_mask, np.array([True, False, True, False], dtype=bool)))
+        self.assertTrue(np.array_equal(loaded.i1_mask, np.array([False, True, True, False], dtype=bool)))
+
+    def test_objective_supports_missing_experimental_values(self) -> None:
+        """The inverse objective should ignore missing i3/i1 samples through masks."""
+        thickness_nm = np.array([0.0, 10.0, 20.0, 30.0], dtype=np.float64)
+        params = SHGParams(
+            lambda_m=1560e-9,
+            n21w=complex(5.6428, 0.0849),
+            n22w=complex(2.8698, 0.4492),
+        )
+        i3_exp, i1_exp = simulate_shg(params, thickness_nm)
+        i3_mask = np.array([True, False, True, False], dtype=bool)
+        i1_mask = np.array([False, True, True, False], dtype=bool)
+        i3_with_gaps = i3_exp.copy()
+        i1_with_gaps = i1_exp.copy()
+        i3_with_gaps[~i3_mask] = np.nan
+        i1_with_gaps[~i1_mask] = np.nan
+
+        objective_value = error_function(
+            [5.6428, 0.0849, 2.8698, 0.4492],
+            thickness_nm,
+            i3_with_gaps,
+            i1_with_gaps,
+            1560e-9,
+            normalization_strategy="global",
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+
+        self.assertTrue(np.isfinite(objective_value))
+        self.assertLess(objective_value, 1e-12)
+
     def test_train_and_evaluate_pipeline(self) -> None:
         """A short ML pipeline should train, save, load and evaluate successfully."""
         thickness_nm = np.arange(0.0, 65.0, 5.0, dtype=np.float64)
@@ -80,6 +142,7 @@ class SmokeTests(unittest.TestCase):
         training_result = train_model(dataset, model_config, training_config)
 
         self.assertEqual(len(training_result.train_loss_history), 2)
+        self.assertEqual(training_result.best_epoch, 2)
         self.assertTrue(np.isfinite(training_result.train_loss_history[-1]))
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -116,6 +179,7 @@ class SmokeTests(unittest.TestCase):
             dataset_path = save_synthetic_dataset(synthetic_dataset, Path(temporary_directory) / "dataset.npz")
             model_path = Path(temporary_directory) / "trained_model.npz"
             summary_path = Path(temporary_directory) / "training_summary.json"
+            output_dir = Path(temporary_directory) / "train_pipeline"
 
             parser = build_parser()
             args = parser.parse_args(
@@ -127,6 +191,8 @@ class SmokeTests(unittest.TestCase):
                     str(model_path),
                     "--summary-path",
                     str(summary_path),
+                    "--output-dir",
+                    str(output_dir),
                     "--hidden-dims",
                     "32",
                     "16",
@@ -136,6 +202,7 @@ class SmokeTests(unittest.TestCase):
                     "4",
                     "--seed",
                     "33",
+                    "--no-figures",
                 ]
             )
             handler = resolve_handler(args, parser)
@@ -145,6 +212,9 @@ class SmokeTests(unittest.TestCase):
 
             self.assertTrue(model_path.exists())
             self.assertTrue(summary_path.exists())
+            self.assertTrue((output_dir / "dataset_split.json").exists())
+            self.assertTrue((output_dir / "validation" / "evaluation_summary.json").exists())
+            self.assertTrue((output_dir / "test" / "evaluation_summary.json").exists())
             loaded_model = load_model(model_path)
             self.assertEqual(loaded_model.config.hidden_dims, (32, 16))
 

@@ -47,17 +47,16 @@ O projeto ja possui:
 
 - simulacao SHG via CLI
 - fitting classico via CLI
+- fitting classico com arquivo experimental externo via CLI
 - geracao de dataset sintetico via CLI
-- treino de MLP via CLI
+- treino de MLP com split automatico treino/validacao/teste via CLI
 - avaliacao de modelo ML via CLI
 - comparacao de metodos via CLI
 - treino de MLP via modulo Python
 
 O projeto ainda nao possui:
 
-- fitting via arquivo experimental externo no CLI
-- pipeline automatico de split treino/validacao/teste
-- empacotamento formal com `pyproject.toml` ou `requirements.txt`
+- empacotamento formal com `pyproject.toml`
 
 ## Estrutura do Projeto
 
@@ -65,6 +64,7 @@ O projeto ainda nao possui:
 SHG/
 |- main.py                      # Wrapper simples para src.main
 |- README.md
+|- requirements.txt
 |- data/
 |  |- shg_dataset.npz           # Exemplo de dataset presente no repositorio
 |- docs/
@@ -112,13 +112,19 @@ Exemplo de instalacao em Windows PowerShell:
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install numpy scipy matplotlib
+pip install -r requirements.txt
 ```
 
 Se voce ja vai usar o ambiente que esta dentro do repositorio:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+Se quiser instalar manualmente em vez de usar o arquivo:
+
+```powershell
+pip install numpy scipy matplotlib
 ```
 
 ## Validacao Rapida
@@ -164,9 +170,21 @@ python main.py fit --normalization global --seed 7
 
 Importante:
 
-- no estado atual, `fit` usa dados experimentais de exemplo definidos no proprio codigo
-- ele nao le um arquivo experimental externo pelo CLI
+- se voce nao passar `--data-path`, `fit` usa dados experimentais de exemplo definidos no proprio codigo
 - ele abre grafico do melhor ajuste e mapa de erro
+
+Exemplo com arquivo externo:
+
+```powershell
+python main.py fit --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --seed 7
+```
+
+Formato esperado do arquivo externo:
+
+- exatamente 3 colunas numericas
+- ordem: `d_nm, i3, i1`
+- `i3` e `i1` podem ficar vazios em uma linha especifica; o fitting ignora esses pontos usando mascara
+- se houver cabecalho, use `--skiprows 1`
 
 ### 3. Gerar dataset sintetico
 
@@ -192,10 +210,13 @@ python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-pa
 Esse comando:
 
 - carrega o dataset sintetico salvo em `.npz`
+- faz o split automatico em treino, validacao e teste
 - monta a MLP com as camadas ocultas informadas
-- executa o treino com augmentacao de mascaras
+- executa o treino com augmentacao de mascaras e selecao do melhor modelo por validacao
 - salva o modelo treinado
 - salva um resumo JSON com historico de loss e hiperparametros
+- salva `dataset_split.json` com os indices usados no split
+- executa avaliacao automatica nos conjuntos de validacao e teste
 
 ### 5. Avaliar um modelo de ML treinado
 
@@ -263,8 +284,8 @@ print(training_result.train_loss_history[-1])
 
 Observacao importante:
 
-- o projeto nao cria automaticamente conjuntos de treino, validacao e teste
-- voce precisa separar os dados manualmente para avaliacao cientifica correta
+- o CLI `train-ml` ja faz split automatico em treino, validacao e teste
+- pela API Python, voce ainda pode controlar esse fluxo manualmente se quiser
 
 ## Onde Ficam Entradas, Modelos, Resultados e Figuras
 
@@ -275,7 +296,8 @@ Observacao importante:
 - datasets de teste:
   - caminho livre, informado em `--dataset-path`
 - dados experimentais do fitting CLI:
-  - hoje ficam hardcoded em `src/main.py`
+  - podem vir de arquivo externo com `--data-path`
+  - se nenhum arquivo for informado, o CLI usa a amostra definida em `src/main.py`
 
 ### Modelos treinados
 
@@ -287,6 +309,8 @@ Observacao importante:
 
 - treino ML:
   - resumo por padrao em `outputs/train_ml/training_summary.json`
+  - split salvo por padrao em `outputs/train_ml/dataset_split.json`
+  - avaliacao automatica em `outputs/train_ml/validation` e `outputs/train_ml/test`
 - avaliacao ML:
   - por padrao em `outputs/evaluate_ml`
 - comparacao de metodos:
@@ -317,7 +341,8 @@ simulacao -> fitting -> dataset sintetico -> treino -> avaliacao -> comparacao
 Observacao importante:
 
 - o treino pode ser feito por CLI ou por API Python
-- o split entre treino, validacao e teste continua sendo responsabilidade do usuario
+- no CLI, o split treino/validacao/teste ja e automatico
+- na API Python, o usuario ainda pode assumir o controle manual do split
 
 ## Troubleshooting
 
@@ -385,25 +410,35 @@ Confira:
 Causas comuns:
 
 - `--dataset-path` aponta para um arquivo que nao e um dataset sintetico valido
+- o dataset tem poucas amostras para um split treino/validacao/teste nao vazio
 - os hiperparametros passados sao invalidos, por exemplo dimensoes ocultas nao positivas
 
 Confira:
 
 - se o arquivo foi gerado por `generate-dataset`
 - se `--hidden-dims`, `--epochs`, `--batch-size` e `--learning-rate` sao coerentes
+- se o dataset tem amostras suficientes para treino, validacao e teste
 
 ### "fit nao usa meus dados experimentais"
 
-Isso tambem e esperado no estado atual.
+Agora o CLI aceita seus dados, desde que o arquivo esteja no formato esperado.
 
-- o comando `fit` usa um conjunto pequeno de exemplo definido em `src/main.py`
-- ainda nao existe um subcomando para carregar dados experimentais externos
+Use:
+
+```powershell
+python main.py fit --data-path caminho/do/arquivo.csv --lambda-nm 1560 --delimiter "," --skiprows 1
+```
+
+Lembre:
+
+- o arquivo deve ter 3 colunas numericas: `d_nm, i3, i1`
+- valores faltantes em `i3` ou `i1` sao aceitos no CSV externo
+- se voce nao passar `--data-path`, o CLI cai no conjunto interno de exemplo
 
 ## O Que Este Projeto Nao Faz
 
 Para evitar interpretacoes erradas, hoje o projeto nao faz automaticamente:
 
-- leitura de dados experimentais reais para o fitting CLI
 - split automatico entre treino, validacao e teste
 - busca automatica de hiperparametros da rede
 - garantia de validade fisica fora dos bounds escolhidos

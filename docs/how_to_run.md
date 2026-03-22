@@ -8,7 +8,7 @@ Importante:
 
 - os comandos abaixo assumem que voce esta na raiz do projeto
 - o CLI principal atual e `python main.py ...`
-- o fitting via CLI ainda usa dados experimentais internos de exemplo
+- `fit` pode usar um arquivo experimental externo simples ou, se nenhum arquivo for passado, cair no exemplo interno do projeto
 
 ## 1. Instalar dependencias
 
@@ -25,13 +25,19 @@ Exemplo em Windows PowerShell:
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install numpy scipy matplotlib
+pip install -r requirements.txt
 ```
 
 Se voce ja estiver usando o ambiente do proprio projeto:
 
 ```powershell
 .venv\Scripts\Activate.ps1
+```
+
+Se preferir instalar manualmente:
+
+```powershell
+pip install numpy scipy matplotlib
 ```
 
 Se estiver em ambiente sem interface grafica e quiser evitar abertura de janelas do `matplotlib`:
@@ -91,28 +97,40 @@ Observacao:
 
 Use o subcomando `fit` para executar a inversao fisica com `differential_evolution`.
 
-Exemplo:
+Exemplo usando o conjunto interno de fallback:
 
 ```powershell
 python main.py fit --normalization global --seed 7
 ```
 
-Opcoes reais hoje:
+Exemplo usando arquivo experimental externo:
 
+```powershell
+python main.py fit --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter , --skiprows 1 --normalization global --seed 7
+```
+
+Opcoes principais hoje:
+
+- `--data-path`
+- `--lambda-nm`
+- `--delimiter`
+- `--skiprows`
 - `--normalization global`
 - `--normalization separate`
 - `--seed`
 
 O que esse comando faz:
 
-- carrega dados experimentais de exemplo definidos em `src/main.py`
+- carrega o arquivo experimental informado em `--data-path`
+- ou, se `--data-path` nao for informado, usa os dados de exemplo definidos em `src/main.py`
 - roda `run_fit(...)`
 - abre a comparacao entre curvas experimentais e simuladas
 - abre um mapa de erro em funcao de `n21w` e `k21w`
 
 Importante:
 
-- hoje o comando nao le arquivo experimental externo
+- o arquivo experimental precisa ter exatamente 3 colunas: `d_nm`, `i3`, `i1`
+- `i3` e `i1` podem ter valores faltantes em linhas especificas; esses pontos sao ignorados no erro do fitting
 - se `scipy` nao estiver instalado, o fitting nao roda
 
 ## 5. Gerar dataset sintetico
@@ -155,20 +173,21 @@ Saida salva:
 Use `train-ml` para transformar um dataset sintetico em um modelo `.npz`.
 
 ```powershell
-python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --seed 42 --verbose
+python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --train-fraction 0.7 --validation-fraction 0.15 --test-fraction 0.15 --seed 42 --split-seed 42 --verbose
 ```
 
 Observacoes importantes:
 
-- o projeto nao faz split automatico entre treino, validacao e teste
-- para um estudo serio, separe os dados manualmente
+- o comando faz split automatico em treino, validacao e teste
+- o melhor modelo e selecionado pela menor loss de validacao observada
 - o modelo salvo e um arquivo `.npz`
-- o comando tambem salva um resumo JSON com loss final, historico de treino e hiperparametros
+- o comando salva `dataset_split.json`, um resumo JSON do treino e avaliacoes automaticas em validacao e teste
 
 Opcoes principais do `train-ml`:
 
 - `--dataset-path`
 - `--model-path`
+- `--output-dir`
 - `--summary-path`
 - `--hidden-dims`
 - `--epochs`
@@ -177,6 +196,12 @@ Opcoes principais do `train-ml`:
 - `--weight-decay`
 - `--gradient-clip`
 - `--seed`
+- `--split-seed`
+- `--train-fraction`
+- `--validation-fraction`
+- `--test-fraction`
+- `--examples-per-group`
+- `--no-figures`
 - `--verbose`
 
 Se voce quiser continuar usando a API Python, o modulo `src/ml/train.py` segue disponivel.
@@ -314,10 +339,12 @@ python main.py generate-dataset --num-samples 1000 --output data/shg_train.npz -
 ### Passo C. Treinar a MLP via CLI
 
 ```powershell
-python main.py train-ml --dataset-path data/shg_train.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --seed 42
+python main.py train-ml --dataset-path data/shg_train.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --seed 42
 ```
 
 ### Passo D. Avaliar no conjunto de teste
+
+O `train-ml` ja gera avaliacao automatica nos subconjuntos de validacao e teste criados no split. Se quiser rodar uma avaliacao separada sobre outro `.npz`, use:
 
 ```powershell
 python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/evaluate_ml
@@ -352,12 +379,19 @@ pip install matplotlib
 Verifique:
 
 - se `--dataset-path` aponta para um `.npz` valido gerado pelo projeto
+- se o dataset tem amostras suficientes para os fracionamentos escolhidos
+- se `--train-fraction`, `--validation-fraction` e `--test-fraction` sao positivos e formam um split viavel
 - se `--hidden-dims` contem apenas inteiros positivos
 - se `--epochs`, `--batch-size` e `--learning-rate` sao positivos
 
 ### O comando `fit` nao usa meus dados reais
 
-Isso tambem e esperado hoje. O CLI usa dados de exemplo definidos em codigo.
+Confira:
+
+- se voce passou `--data-path`
+- se o arquivo tem exatamente 3 colunas no formato `d_nm, i3, i1`
+- se os vazios aparecem apenas em `i3` e/ou `i1` e nao em `d_nm`
+- se `--lambda-nm` corresponde ao experimento que voce quer ajustar
 
 ### A comparacao esta lenta
 

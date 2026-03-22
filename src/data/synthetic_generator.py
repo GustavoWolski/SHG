@@ -15,9 +15,9 @@ FloatArray = npt.NDArray[np.float64]
 NormalizationMode = Literal["none", "global", "separate"]
 
 DEFAULT_PARAMETER_BOUNDS: dict[str, tuple[float, float]] = {
-    "n21w": (3.0, 7.0),
+    "n21w": (1.0, 6.0),
     "k21w": (0.0, 1.0),
-    "n22w": (2.0, 5.0),
+    "n22w": (1.0, 6.0),
     "k22w": (0.0, 1.0),
 }
 PARAMETER_NAMES: tuple[str, str, str, str] = ("n21w", "k21w", "n22w", "k22w")

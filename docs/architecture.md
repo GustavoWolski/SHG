@@ -163,11 +163,14 @@ Papel:
 
 - carregar colunas numericas de texto com `load_columns(...)`
 - carregar dataset sintetico salvo com `load_synthetic_dataset(...)`
+- carregar um arquivo experimental simples com `load_experimental_shg_data(...)`
 
 Importante:
 
-- o CLI atual de `fit` ainda nao usa arquivo externo experimental
-- ele usa um pequeno conjunto de exemplo definido em `src/main.py`
+- o loader experimental espera 3 colunas: `d_nm`, `i3`, `i1`
+- `i3` e `i1` podem ter amostras faltantes; o fitting usa mascaras para ignorar os pontos ausentes
+- `src/main.py` usa esse loader quando `fit` recebe `--data-path`
+- se `--data-path` nao for informado, o CLI ainda tem um pequeno conjunto interno de fallback
 
 ## Camada de machine learning
 
@@ -181,6 +184,8 @@ Papel:
 - construir mascaras de observacao
 - concatenar entrada como `[i3, i1, mascara]`
 - criar cenarios com apenas `i3`, apenas `i1` ou ambos
+- dividir o dataset em treino, validacao e teste com utilitarios de split
+- salvar o resumo do split para rastreabilidade
 
 Essa camada e a base para o suporte a dados incompletos.
 
@@ -214,11 +219,15 @@ Papel:
 - normalizar entradas e alvos
 - treinar com mini-batches
 - usar Adam e gradient clipping
+- acompanhar perda de validacao
+- restaurar o melhor conjunto de pesos observado no treino
+- salvar resumo do treino em JSON
 
 Importante:
 
 - o treino pode ser chamado via CLI (`train-ml`) ou via API Python
-- o modulo tambem salva um resumo JSON do treinamento para rastreabilidade
+- o CLI atual faz o split automatico em treino, validacao e teste antes do treino
+- ao final, o pipeline roda avaliacao automatica nos subconjuntos de validacao e teste
 
 #### `src/ml/evaluate.py`
 
@@ -289,6 +298,8 @@ Papel:
 - registrar subcomandos do CLI
 - despachar o fluxo correto
 - ligar entrada do usuario aos modulos internos
+- carregar dados experimentais externos para `fit`
+- coordenar o pipeline de split, treino e avaliacao para `train-ml`
 
 Subcomandos reais hoje:
 
@@ -494,10 +505,9 @@ Exemplos:
 
 O projeto esta funcional, mas ainda tem limites claros:
 
-- `fit` ainda nao recebe arquivo experimental externo
-- nao ha pipeline nativo de split treino/validacao/teste
 - a MLP e simples e implementada manualmente em `numpy`
 - nao existe camada de experimento com ruido instrumental real
+- o arquivo experimental aceito por `fit` ainda e um formato simples de 3 colunas, nao um pipeline laboratorial completo
 - parte da formulacao fisica ainda pede revisao teorica em um ponto marcado como `TODO`
 
 ## Resumo

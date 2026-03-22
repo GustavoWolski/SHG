@@ -17,8 +17,14 @@ Problema inverso. Faz o caminho contrario do forward model: parte das curvas obs
 Processo de ajuste numerico em que um otimizador tenta encontrar parametros que minimizem a diferenca entre curvas simuladas e curvas observadas.
 
 ## Parametro optico
+O modelo considera o índice de refração complexo do material, com parte real associada à propagação e parte imaginária à absorção, avaliados tanto na frequência fundamental quanto na segunda harmônica.
 
-Quantidade que descreve propriedades opticas do material. Neste projeto, os parametros ajustados sao `n21w`, `k21w`, `n22w` e `k22w`.
+'n' controla como a luz se propaga, 'k' controla quanto a luz é absorvida
+
+Quantidade que descreve propriedades opticas do material. Neste projeto, os parametros ajustados sao `n21w` -> índice de refração (parte real) da frequencia fundamental , 
+`k21w` -> coeficiente de extinção (parte imaginária) da frequencia fundamental , 
+`n22w` -> índice de refração (parte real) da frequencia do segundo harmonico
+`k22w` -> coeficiente de extinção (parte imaginária) da frequencia do segundo harmonico.
 
 ## Indice complexo
 

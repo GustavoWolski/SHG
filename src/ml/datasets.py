@@ -1,14 +1,19 @@
-"""Dataset containers and masking helpers for SHG ML experiments."""
+"""Dataset containers, splitting and masking helpers for SHG ML experiments."""
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
 
 from src.data.synthetic_generator import SyntheticSHGDataset
+from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 MaskArray = npt.NDArray[np.float64]
+IntArray = npt.NDArray[np.int64]
 
 MASK_BOTH = np.array([1.0, 1.0], dtype=np.float64)
 MASK_I3_ONLY = np.array([1.0, 0.0], dtype=np.float64)
@@ -44,6 +49,29 @@ class SHGDataset:
     def output_dim(self) -> int:
         """Return the number of regression targets."""
         return int(self.targets.shape[1])
+
+
+@dataclass
+class DatasetSplit:
+    """Train/validation/test split for an SHG dataset."""
+
+    train: SHGDataset
+    validation: SHGDataset
+    test: SHGDataset
+    train_indices: IntArray
+    validation_indices: IntArray
+    test_indices: IntArray
+
+    def summary_dict(self) -> dict[str, object]:
+        """Return a JSON-serializable description of the split."""
+        return {
+            "train_count": int(self.train_indices.size),
+            "validation_count": int(self.validation_indices.size),
+            "test_count": int(self.test_indices.size),
+            "train_indices": self.train_indices.tolist(),
+            "validation_indices": self.validation_indices.tolist(),
+            "test_indices": self.test_indices.tolist(),
+        }
 
 
 def from_synthetic_dataset(dataset: SyntheticSHGDataset) -> SHGDataset:
@@ -109,3 +137,81 @@ def subset_dataset(dataset: SHGDataset, indices: np.ndarray) -> SHGDataset:
         i1=np.asarray(dataset.i1[selected_indices], dtype=np.float64),
         targets=np.asarray(dataset.targets[selected_indices], dtype=np.float64),
     )
+
+
+def _normalized_split_fractions(
+    train_fraction: float,
+    validation_fraction: float,
+    test_fraction: float,
+) -> FloatArray:
+    """Validate and normalize train/validation/test fractions."""
+    fractions = np.array([train_fraction, validation_fraction, test_fraction], dtype=np.float64)
+    if not np.all(np.isfinite(fractions)) or np.any(fractions <= 0.0):
+        raise ValueError("Split fractions must be finite and strictly positive.")
+    return fractions / np.sum(fractions)
+
+
+def _split_counts(num_samples: int, fractions: FloatArray) -> tuple[int, int, int]:
+    """Compute integer split sizes while keeping all splits non-empty."""
+    if num_samples < 3:
+        raise ValueError("At least 3 samples are required for train/validation/test split.")
+
+    raw_counts = fractions * num_samples
+    counts = np.floor(raw_counts).astype(np.int64)
+    remainder = int(num_samples - np.sum(counts))
+    order = np.argsort(-(raw_counts - counts))
+    for split_index in order[:remainder]:
+        counts[split_index] += 1
+
+    for split_index in range(counts.size):
+        if counts[split_index] > 0:
+            continue
+        donor_index = int(np.argmax(counts))
+        if counts[donor_index] <= 1:
+            raise ValueError("Could not build non-empty train/validation/test splits.")
+        counts[donor_index] -= 1
+        counts[split_index] += 1
+
+    return int(counts[0]), int(counts[1]), int(counts[2])
+
+
+def split_dataset(
+    dataset: SHGDataset,
+    train_fraction: float = 0.7,
+    validation_fraction: float = 0.15,
+    test_fraction: float = 0.15,
+    seed: Optional[int] = None,
+    shuffle: bool = True,
+) -> DatasetSplit:
+    """Split an SHG dataset into train, validation and test subsets."""
+    fractions = _normalized_split_fractions(train_fraction, validation_fraction, test_fraction)
+    train_count, validation_count, test_count = _split_counts(dataset.num_samples, fractions)
+
+    if shuffle:
+        rng = np.random.default_rng(seed)
+        indices = rng.permutation(dataset.num_samples).astype(np.int64)
+    else:
+        indices = np.arange(dataset.num_samples, dtype=np.int64)
+
+    train_end = train_count
+    validation_end = train_count + validation_count
+    train_indices = indices[:train_end]
+    validation_indices = indices[train_end:validation_end]
+    test_indices = indices[validation_end : validation_end + test_count]
+
+    return DatasetSplit(
+        train=subset_dataset(dataset, train_indices),
+        validation=subset_dataset(dataset, validation_indices),
+        test=subset_dataset(dataset, test_indices),
+        train_indices=train_indices,
+        validation_indices=validation_indices,
+        test_indices=test_indices,
+    )
+
+
+def save_dataset_split(split: DatasetSplit, file_path: str | Path) -> Path:
+    """Save the train/validation/test split indices as JSON."""
+    output_path = Path(file_path)
+    ensure_directory(output_path.parent)
+    output_path.write_text(json.dumps(split.summary_dict(), indent=2), encoding="utf-8")
+    return output_path

@@ -317,14 +317,18 @@ Este projeto e util para pesquisa e estudo, mas os resultados precisam ser lidos
 Isso significa:
 
 - a rede aprende a partir do proprio modelo
-- ela nao foi validada, no estado atual, com dados experimentais reais trazidos por arquivo no CLI
+- ela ainda depende fortemente de quao representativo e o dataset sintetico usado
+- aceitar um arquivo externo no `fit` nao significa que o projeto ja resolva toda a variabilidade de um experimento real
 
-### 2. O fitting do CLI ainda usa dados internos de exemplo
+### 2. O fitting aceita arquivo externo, mas o fluxo experimental ainda e simples
 
 Hoje o comando `fit`:
 
-- nao carrega um arquivo experimental externo
-- usa um pequeno conjunto de exemplo definido em codigo
+- pode carregar um arquivo externo com 3 colunas numericas: `d_nm`, `i3`, `i1`
+- aceita que uma linha tenha apenas `i3`, apenas `i1` ou ambos, desde que `d_nm` exista
+- usa um pequeno conjunto interno de exemplo apenas como fallback, quando nenhum arquivo e informado
+
+Isso facilita o uso pratico, mas ainda nao equivale a um pipeline experimental completo com pre-processamento, ruído instrumental, calibracao e validacao metrologica.
 
 ### 3. Existe um ponto teorico marcado para revisao
 

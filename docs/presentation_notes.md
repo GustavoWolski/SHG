@@ -123,10 +123,9 @@ Frase curta para apresentacao:
 
 Estas limitacoes devem ser ditas com transparencia:
 
-- o treino ainda nao possui subcomando CLI funcional
-- o fitting via CLI usa dados experimentais de exemplo definidos no codigo
 - o universo de treino e sintetico
-- nao ha pipeline nativo de split treino, validacao e teste
+- o arquivo experimental aceito por `fit` ainda segue um formato simples de 3 colunas, embora agora tolere faltas em `i3` ou `i1`
+- o split treino/validacao/teste atual e automatico, mas continua dependente da qualidade e do tamanho do dataset sintetico informado pelo usuario
 - existe um ponto teorico no modulo fisico marcado com `TODO`
 - a MLP atual e propositalmente simples
 
@@ -199,7 +198,7 @@ Porque velocidade nao garante coerencia fisica total. Por isso o projeto tambem 
 
 ### "O projeto ja usa dados experimentais reais?"
 
-No estado atual, o CLI de fitting usa dados internos de exemplo. A estrutura de software esta pronta para crescer, mas esse fluxo experimental ainda nao esta completo.
+O CLI de fitting ja aceita um arquivo externo simples com `d_nm`, `i3` e `i1`. Isso ajuda no uso pratico, mas ainda nao representa um pipeline experimental completo com tratamento instrumental e validacao mais ampla.
 
 ### "O que a mascara de entrada faz?"
 

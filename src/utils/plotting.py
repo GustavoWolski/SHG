@@ -9,6 +9,7 @@ from src.inverse.fitters import FitResult, simulate_fit_result
 from src.inverse.objective import NormalizationStrategy, error_function, normalize_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
+BoolArray = npt.NDArray[np.bool_]
 
 
 def _show_or_close_figure(plt: Any, figure: Any) -> None:
@@ -53,6 +54,8 @@ def plot_error_map(
     n22_fixed: float = 2.8,
     k22_fixed: float = 0.4,
     normalization_strategy: NormalizationStrategy = "global",
+    i3_mask: BoolArray | None = None,
+    i1_mask: BoolArray | None = None,
 ) -> None:
     """Plot the error map varying n21w and k21w."""
     try:
@@ -75,6 +78,8 @@ def plot_error_map(
                 i1_exp,
                 lambda_m,
                 normalization_strategy=normalization_strategy,
+                i3_mask=i3_mask,
+                i1_mask=i1_mask,
             )
 
     fig, axis = plt.subplots(figsize=(7, 6))
@@ -96,6 +101,8 @@ def plot_fit_comparison(
     i3_exp: FloatArray,
     i1_exp: FloatArray,
     fit_result: FitResult,
+    i3_mask: BoolArray | None = None,
+    i1_mask: BoolArray | None = None,
 ) -> None:
     """Plot experimental and best-fit simulated SHG curves."""
     try:
@@ -110,20 +117,26 @@ def plot_fit_comparison(
         i3_sim=i3_sim,
         i1_sim=i1_sim,
         strategy=fit_result.normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
     )
     if normalized_curves is None:
         raise ValueError("Could not normalize the experimental and fitted curves for plotting.")
 
     i3_exp_norm, i1_exp_norm, i3_sim_norm, i1_sim_norm = normalized_curves
+    observed_i3_mask = np.isfinite(i3_exp) if i3_mask is None else np.asarray(i3_mask, dtype=bool) & np.isfinite(i3_exp)
+    observed_i1_mask = np.isfinite(i1_exp) if i1_mask is None else np.asarray(i1_mask, dtype=bool) & np.isfinite(i1_exp)
 
     fig, axes = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-    axes[0].plot(d_exp, i3_exp_norm, "ok", label="Exp")
+    if np.any(observed_i3_mask):
+        axes[0].plot(d_exp[observed_i3_mask], i3_exp_norm[observed_i3_mask], "ok", label="Exp")
     axes[0].plot(d_exp, i3_sim_norm, "-r", label="Sim")
     axes[0].set_ylabel("T (norm)")
     axes[0].grid(True)
     axes[0].legend()
 
-    axes[1].plot(d_exp, i1_exp_norm, "ok", label="Exp")
+    if np.any(observed_i1_mask):
+        axes[1].plot(d_exp[observed_i1_mask], i1_exp_norm[observed_i1_mask], "ok", label="Exp")
     axes[1].plot(d_exp, i1_sim_norm, "-b", label="Sim")
     axes[1].set_xlabel("d (nm)")
     axes[1].set_ylabel("R (norm)")

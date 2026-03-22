@@ -8,7 +8,7 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 
-from src.ml.datasets import SHGDataset, build_input_features, sample_augmentation_masks
+from src.ml.datasets import SHGDataset, build_input_features, full_observation_masks, sample_augmentation_masks
 from src.ml.models import MLPRegressor, ModelConfig, build_model
 from src.utils.io import ensure_directory
 
@@ -34,6 +34,9 @@ class TrainingResult:
 
     model: MLPRegressor
     train_loss_history: list[float]
+    validation_loss_history: list[float]
+    best_epoch: int
+    best_validation_loss: Optional[float]
 
 
 @dataclass
@@ -53,8 +56,15 @@ class TrainingSummary:
     weight_decay: float
     gradient_clip: float
     seed: Optional[int]
+    train_num_samples: int
+    validation_num_samples: int
+    test_num_samples: int
     final_train_loss: float
     train_loss_history: list[float]
+    final_validation_loss: Optional[float]
+    validation_loss_history: list[float]
+    best_epoch: int
+    best_validation_loss: Optional[float]
 
     def to_dict(self) -> dict[str, object]:
         """Convert the training summary into a JSON-serializable dictionary."""
@@ -72,16 +82,25 @@ class TrainingSummary:
             "weight_decay": self.weight_decay,
             "gradient_clip": self.gradient_clip,
             "seed": self.seed,
+            "train_num_samples": self.train_num_samples,
+            "validation_num_samples": self.validation_num_samples,
+            "test_num_samples": self.test_num_samples,
             "final_train_loss": self.final_train_loss,
             "train_loss_history": self.train_loss_history,
+            "final_validation_loss": self.final_validation_loss,
+            "validation_loss_history": self.validation_loss_history,
+            "best_epoch": self.best_epoch,
+            "best_validation_loss": self.best_validation_loss,
         }
 
 
 def build_training_summary(
-    dataset: SHGDataset,
+    train_dataset: SHGDataset,
     model_config: ModelConfig,
     training_config: TrainingConfig,
     training_result: TrainingResult,
+    validation_dataset: SHGDataset | None = None,
+    test_dataset: SHGDataset | None = None,
     dataset_path: str | None = None,
     model_path: str | None = None,
 ) -> TrainingSummary:
@@ -92,8 +111,8 @@ def build_training_summary(
     return TrainingSummary(
         dataset_path=dataset_path,
         model_path=model_path,
-        num_samples=dataset.num_samples,
-        curve_length=dataset.curve_length,
+        num_samples=train_dataset.num_samples,
+        curve_length=train_dataset.curve_length,
         input_dim=model_config.input_dim,
         output_dim=model_config.output_dim,
         hidden_dims=model_config.hidden_dims,
@@ -103,8 +122,19 @@ def build_training_summary(
         weight_decay=training_config.weight_decay,
         gradient_clip=training_config.gradient_clip,
         seed=training_config.seed,
+        train_num_samples=train_dataset.num_samples,
+        validation_num_samples=0 if validation_dataset is None else validation_dataset.num_samples,
+        test_num_samples=0 if test_dataset is None else test_dataset.num_samples,
         final_train_loss=float(training_result.train_loss_history[-1]),
         train_loss_history=[float(loss) for loss in training_result.train_loss_history],
+        final_validation_loss=(
+            None
+            if not training_result.validation_loss_history
+            else float(training_result.validation_loss_history[-1])
+        ),
+        validation_loss_history=[float(loss) for loss in training_result.validation_loss_history],
+        best_epoch=training_result.best_epoch,
+        best_validation_loss=training_result.best_validation_loss,
     )
 
 
@@ -196,10 +226,36 @@ def _iterate_minibatches(num_samples: int, batch_size: int, rng: np.random.Gener
     return [indices[start : start + batch_size] for start in range(0, num_samples, batch_size)]
 
 
+def _copy_model_parameters(model: MLPRegressor) -> tuple[list[FloatArray], list[FloatArray]]:
+    """Create a detached copy of model weights and biases."""
+    return (
+        [weight.copy() for weight in model.weights],
+        [bias.copy() for bias in model.biases],
+    )
+
+
+def _restore_model_parameters(
+    model: MLPRegressor,
+    weights: list[FloatArray],
+    biases: list[FloatArray],
+) -> None:
+    """Restore model weights and biases from a detached snapshot."""
+    model.weights = [weight.copy() for weight in weights]
+    model.biases = [bias.copy() for bias in biases]
+
+
+def compute_parameter_mse(model: MLPRegressor, dataset: SHGDataset) -> float:
+    """Compute parameter-space MSE on a full-observation SHG dataset."""
+    features = build_input_features(dataset.i3, dataset.i1, full_observation_masks(dataset.num_samples))
+    predictions = model.predict(features)
+    return float(np.mean((predictions - dataset.targets) ** 2))
+
+
 def train_model(
     dataset: SHGDataset,
     model_config: ModelConfig,
     training_config: Optional[TrainingConfig] = None,
+    validation_dataset: SHGDataset | None = None,
 ) -> TrainingResult:
     """Train an MLP on SHG curves with random missing-channel augmentation."""
     config = training_config or TrainingConfig()
@@ -244,7 +300,11 @@ def train_model(
     beta2 = 0.999
     epsilon = 1e-8
     train_loss_history: list[float] = []
+    validation_loss_history: list[float] = []
     update_step = 0
+    best_epoch = config.epochs
+    best_validation_loss: Optional[float] = None
+    best_snapshot: tuple[list[FloatArray], list[FloatArray]] | None = None
 
     for epoch_index in range(config.epochs):
         epoch_losses: list[float] = []
@@ -287,7 +347,26 @@ def train_model(
 
         epoch_loss = float(np.mean(epoch_losses))
         train_loss_history.append(epoch_loss)
-        if config.verbose and ((epoch_index + 1) % 25 == 0 or epoch_index == 0):
-            print(f"Epoch {epoch_index + 1}/{config.epochs} - loss={epoch_loss:.6f}")
+        validation_message = ""
+        if validation_dataset is not None:
+            validation_loss = compute_parameter_mse(model, validation_dataset)
+            validation_loss_history.append(validation_loss)
+            validation_message = f" - val_loss={validation_loss:.6f}"
+            if best_validation_loss is None or validation_loss < best_validation_loss:
+                best_validation_loss = validation_loss
+                best_epoch = epoch_index + 1
+                best_snapshot = _copy_model_parameters(model)
 
-    return TrainingResult(model=model, train_loss_history=train_loss_history)
+        if config.verbose and ((epoch_index + 1) % 25 == 0 or epoch_index == 0):
+            print(f"Epoch {epoch_index + 1}/{config.epochs} - train_loss={epoch_loss:.6f}{validation_message}")
+
+    if best_snapshot is not None:
+        _restore_model_parameters(model, *best_snapshot)
+
+    return TrainingResult(
+        model=model,
+        train_loss_history=train_loss_history,
+        validation_loss_history=validation_loss_history,
+        best_epoch=best_epoch,
+        best_validation_loss=best_validation_loss,
+    )

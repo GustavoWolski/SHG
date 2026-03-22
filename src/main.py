@@ -2,19 +2,21 @@
 
 import argparse
 from collections.abc import Callable
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
 
 from src.data.synthetic_generator import DEFAULT_PARAMETER_BOUNDS
-from src.data.loaders import load_synthetic_dataset
-from src.ml.datasets import from_synthetic_dataset, subset_dataset
+from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
+from src.ml.datasets import from_synthetic_dataset, save_dataset_split, split_dataset, subset_dataset
 from src.ml.models import load_model
 from src.physics.shg_model import SHGParams, simulate_shg
 from src.utils.plotting import plot_error_map, plot_fit_comparison, plot_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
+BoolArray = npt.NDArray[np.bool_]
 CommandHandler = Callable[[argparse.Namespace], None]
 
 
@@ -33,7 +35,31 @@ def build_simulate_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the fit subcommand."""
-    parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos.")
+    parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos ou arquivo externo.")
+    parser.add_argument(
+        "--data-path",
+        type=str,
+        default=None,
+        help="Arquivo texto/CSV com colunas d_nm,i3,i1; i3/i1 podem ter valores faltantes.",
+    )
+    parser.add_argument(
+        "--lambda-nm",
+        type=float,
+        default=1560.0,
+        help="Comprimento de onda (nm) usado no fitting.",
+    )
+    parser.add_argument(
+        "--delimiter",
+        type=str,
+        default=",",
+        help="Delimitador do arquivo experimental externo.",
+    )
+    parser.add_argument(
+        "--skiprows",
+        type=int,
+        default=0,
+        help="Numero de linhas de cabecalho a ignorar no arquivo experimental externo.",
+    )
     parser.add_argument(
         "--normalization",
         choices=["global", "separate"],
@@ -91,10 +117,16 @@ def build_train_ml_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Arquivo NPZ de saida para o modelo treinado.",
     )
     parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="outputs/train_ml",
+        help="Diretorio base para split, validacao e teste automaticos.",
+    )
+    parser.add_argument(
         "--summary-path",
         type=str,
-        default="outputs/train_ml/training_summary.json",
-        help="Arquivo JSON para salvar o resumo do treinamento.",
+        default=None,
+        help="Arquivo JSON opcional para salvar o resumo do treinamento.",
     )
     parser.add_argument(
         "--hidden-dims",
@@ -108,7 +140,27 @@ def build_train_ml_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-3, help="Taxa de aprendizado.")
     parser.add_argument("--weight-decay", type=float, default=1e-5, help="Regularizacao L2.")
     parser.add_argument("--gradient-clip", type=float, default=5.0, help="Clip global do gradiente.")
+    parser.add_argument("--train-fraction", type=float, default=0.7, help="Fracao do dataset usada em treino.")
+    parser.add_argument("--validation-fraction", type=float, default=0.15, help="Fracao usada em validacao.")
+    parser.add_argument("--test-fraction", type=float, default=0.15, help="Fracao usada em teste.")
     parser.add_argument("--seed", type=int, default=None, help="Seed opcional para reprodutibilidade.")
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Seed opcional especifica para o split treino/validacao/teste.",
+    )
+    parser.add_argument(
+        "--examples-per-group",
+        type=int,
+        default=1,
+        help="Numero de exemplos bons/medianos/ruins por grupo nas figuras de validacao/teste.",
+    )
+    parser.add_argument(
+        "--no-figures",
+        action="store_true",
+        help="Nao salva figuras de validacao/teste, apenas metricas numericas.",
+    )
     parser.add_argument(
         "--verbose",
         action="store_true",
@@ -212,13 +264,36 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def sample_experimental_data() -> tuple[FloatArray, FloatArray, FloatArray, float]:
+def sample_experimental_data(lambda_m: float = 1560e-9) -> tuple[FloatArray, FloatArray, FloatArray, float]:
     """Return the current sample experimental data."""
     d_exp = np.array([0, 50, 100, 150, 200], dtype=np.float64)
     i3_exp = np.array([0.1, 0.8, 0.3, 1.0, 0.4], dtype=np.float64)
     i1_exp = np.array([0.5, 0.2, 0.7, 0.1, 0.6], dtype=np.float64)
-    lambda_m = 1560e-9
     return d_exp, i3_exp, i1_exp, lambda_m
+
+
+def resolve_fit_data(args: argparse.Namespace) -> tuple[FloatArray, FloatArray, FloatArray, BoolArray, BoolArray, float]:
+    """Resolve the fit inputs from external file or current in-code sample data."""
+    lambda_m = args.lambda_nm * 1e-9
+    if args.data_path is None:
+        d_exp, i3_exp, i1_exp, _ = sample_experimental_data(lambda_m=lambda_m)
+        full_i3_mask = np.ones_like(i3_exp, dtype=bool)
+        full_i1_mask = np.ones_like(i1_exp, dtype=bool)
+        return d_exp, i3_exp, i1_exp, full_i3_mask, full_i1_mask, lambda_m
+
+    experimental_data = load_experimental_shg_data(
+        file_path=args.data_path,
+        delimiter=args.delimiter,
+        skiprows=args.skiprows,
+    )
+    return (
+        experimental_data.d_nm,
+        experimental_data.i3,
+        experimental_data.i1,
+        experimental_data.i3_mask,
+        experimental_data.i1_mask,
+        lambda_m,
+    )
 
 
 def handle_simulate(args: argparse.Namespace) -> None:
@@ -235,10 +310,10 @@ def handle_simulate(args: argparse.Namespace) -> None:
 
 
 def handle_fit(args: argparse.Namespace) -> None:
-    """Run the inverse fitting workflow with in-code experimental data."""
+    """Run the inverse fitting workflow with in-code or external experimental data."""
     from src.inverse.fitters import run_fit
 
-    d_exp, i3_exp, i1_exp, lambda_m = sample_experimental_data()
+    d_exp, i3_exp, i1_exp, i3_mask, i1_mask, lambda_m = resolve_fit_data(args)
     normalization_strategy = args.normalization
     result = run_fit(
         d_exp,
@@ -247,8 +322,10 @@ def handle_fit(args: argparse.Namespace) -> None:
         lambda_m,
         normalization_strategy=normalization_strategy,
         seed=args.seed,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
     )
-    plot_fit_comparison(d_exp, i3_exp, i1_exp, result)
+    plot_fit_comparison(d_exp, i3_exp, i1_exp, result, i3_mask=i3_mask, i1_mask=i1_mask)
     plot_error_map(
         d_exp,
         i3_exp,
@@ -257,6 +334,8 @@ def handle_fit(args: argparse.Namespace) -> None:
         n22_fixed=float(result.fitted_params.n22w.real),
         k22_fixed=float(result.fitted_params.n22w.imag),
         normalization_strategy=normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
     )
 
 
@@ -287,7 +366,8 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
 
 
 def handle_train_ml(args: argparse.Namespace) -> None:
-    """Train a masked-input MLP from a synthetic SHG dataset."""
+    """Train a masked-input MLP with automatic train/validation/test split."""
+    from src.ml.evaluate import evaluate_model
     from src.ml.models import ModelConfig, save_model
     from src.ml.train import (
         TrainingConfig,
@@ -301,10 +381,21 @@ def handle_train_ml(args: argparse.Namespace) -> None:
 
     synthetic_dataset = load_synthetic_dataset(args.dataset_path)
     dataset = from_synthetic_dataset(synthetic_dataset)
+    split_seed = args.split_seed if args.split_seed is not None else args.seed
+    dataset_split = split_dataset(
+        dataset=dataset,
+        train_fraction=args.train_fraction,
+        validation_fraction=args.validation_fraction,
+        test_fraction=args.test_fraction,
+        seed=split_seed,
+    )
+    output_dir = Path(args.output_dir)
+    split_path = save_dataset_split(dataset_split, output_dir / "dataset_split.json")
+    summary_path = Path(args.summary_path) if args.summary_path is not None else output_dir / "training_summary.json"
 
     model_config = ModelConfig(
-        input_dim=dataset.input_dim,
-        output_dim=dataset.output_dim,
+        input_dim=dataset_split.train.input_dim,
+        output_dim=dataset_split.train.output_dim,
         hidden_dims=tuple(args.hidden_dims),
     )
     training_config = TrainingConfig(
@@ -318,27 +409,63 @@ def handle_train_ml(args: argparse.Namespace) -> None:
     )
 
     training_result = train_model(
-        dataset=dataset,
+        dataset=dataset_split.train,
         model_config=model_config,
         training_config=training_config,
+        validation_dataset=dataset_split.validation,
     )
     model_path = save_model(training_result.model, args.model_path)
+    validation_report = evaluate_model(
+        model=training_result.model,
+        dataset=dataset_split.validation,
+        output_dir=output_dir / "validation",
+        save_figures=not args.no_figures,
+        examples_per_group=args.examples_per_group,
+    )
+    test_report = evaluate_model(
+        model=training_result.model,
+        dataset=dataset_split.test,
+        output_dir=output_dir / "test",
+        save_figures=not args.no_figures,
+        examples_per_group=args.examples_per_group,
+    )
     summary = build_training_summary(
-        dataset=dataset,
+        train_dataset=dataset_split.train,
         model_config=model_config,
         training_config=training_config,
         training_result=training_result,
+        validation_dataset=dataset_split.validation,
+        test_dataset=dataset_split.test,
         dataset_path=args.dataset_path,
         model_path=str(model_path),
     )
-    summary_path = save_training_summary(summary, args.summary_path)
+    summary_path = save_training_summary(summary, summary_path)
 
     print(f"Modelo salvo em: {model_path}")
     print(f"Resumo salvo em: {summary_path}")
-    print(f"Amostras usadas: {dataset.num_samples}")
-    print(f"Entrada={dataset.input_dim} | Saida={dataset.output_dim}")
+    print(f"Split salvo em: {split_path}")
+    print(
+        "Amostras: "
+        f"train={dataset_split.train.num_samples} "
+        f"| validation={dataset_split.validation.num_samples} "
+        f"| test={dataset_split.test.num_samples}"
+    )
+    print(f"Entrada={dataset_split.train.input_dim} | Saida={dataset_split.train.output_dim}")
     print(f"Camadas ocultas: {model_config.hidden_dims}")
     print(f"Loss final de treino: {summary.final_train_loss:.6f}")
+    if summary.best_validation_loss is not None:
+        print(
+            f"Melhor validacao: epoch={summary.best_epoch} "
+            f"| val_loss={summary.best_validation_loss:.6f}"
+        )
+    print(
+        "Validacao final (i3_i1): "
+        f"erro_total={validation_report.scenarios['i3_i1'].reconstruction_metrics.mean_total_error:.6e}"
+    )
+    print(
+        "Teste final (i3_i1): "
+        f"erro_total={test_report.scenarios['i3_i1'].reconstruction_metrics.mean_total_error:.6e}"
+    )
 
 
 def handle_evaluate_ml(args: argparse.Namespace) -> None:

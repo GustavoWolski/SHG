@@ -1,0 +1,4 @@
+# Runtime dependencies validated in the current project environment.
+numpy==2.4.3
+scipy==1.17.1
+matplotlib==3.10.8
