@@ -93,24 +93,48 @@ Observacao:
 
 - esse comando exibe figura, mas nao salva arquivo automaticamente
 
-## 4. Rodar fitting classico
+## 4. Rodar fitting experimental
 
-Use o subcomando `fit` para executar a inversao fisica com `differential_evolution`.
+Use o subcomando `fit` para executar a inversao experimental em um de quatro modos:
+
+- `classical`: fitting classico com `differential_evolution`
+- `ml`: predicao direta da rede treinada
+- `hybrid`: rede neural seguida de refinamento fisico local
+- `compare`: executa os tres modos acima e aponta o melhor pelo erro observado
 
 Exemplo usando o conjunto interno de fallback:
 
 ```powershell
-python main.py fit --normalization global --seed 7
+python main.py fit --method classical --normalization global --seed 7
 ```
 
 Exemplo usando arquivo experimental externo:
 
 ```powershell
-python main.py fit --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter , --skiprows 1 --normalization global --seed 7
+python main.py fit --method classical --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --seed 7
+```
+
+Exemplo em modo `ml`:
+
+```powershell
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global
+```
+
+Exemplo em modo `hybrid`:
+
+```powershell
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+```
+
+Exemplo em modo `compare`:
+
+```powershell
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --seed 7 --output-dir outputs/fit_compare
 ```
 
 Opcoes principais hoje:
 
+- `--method {classical,ml,hybrid,compare}`
 - `--data-path`
 - `--lambda-nm`
 - `--delimiter`
@@ -118,19 +142,28 @@ Opcoes principais hoje:
 - `--normalization global`
 - `--normalization separate`
 - `--seed`
+- `--model-path`
+- `--local-bounds`
+- `--neighborhood-fraction`
+- `--output-dir`
 
 O que esse comando faz:
 
 - carrega o arquivo experimental informado em `--data-path`
 - ou, se `--data-path` nao for informado, usa os dados de exemplo definidos em `src/main.py`
-- roda `run_fit(...)`
-- abre a comparacao entre curvas experimentais e simuladas
-- abre um mapa de erro em funcao de `n21w` e `k21w`
+- executa o metodo escolhido
+- mostra os parametros previstos, o erro observado e o tempo
+- abre a comparacao entre curvas experimentais e reconstruidas
+- no modo `classical`, tambem abre o mapa de erro em funcao de `n21w` e `k21w`
+- no modo `compare`, imprime os tres resultados e indica o melhor pelo erro observado
 
 Importante:
 
 - o arquivo experimental precisa ter exatamente 3 colunas: `d_nm`, `i3`, `i1`
 - `i3` e `i1` podem ter valores faltantes em linhas especificas; esses pontos sao ignorados no erro do fitting
+- `ml`, `hybrid` e `compare` exigem `--model-path`
+- no `ml` e no `hybrid`, lacunas internas de um canal disponivel sao preenchidas por interpolacao linear apenas para montar a entrada da MLP
+- no `ml`, a previsao final e recortada aos bounds fisicos do projeto antes de ser exibida
 - se `scipy` nao estiver instalado, o fitting nao roda
 
 ## 5. Gerar dataset sintetico
@@ -392,6 +425,7 @@ Confira:
 - se o arquivo tem exatamente 3 colunas no formato `d_nm, i3, i1`
 - se os vazios aparecem apenas em `i3` e/ou `i1` e nao em `d_nm`
 - se `--lambda-nm` corresponde ao experimento que voce quer ajustar
+- se voce passou `--model-path` ao usar `--method ml`, `--method hybrid` ou `--method compare`
 
 ### A comparacao esta lenta
 

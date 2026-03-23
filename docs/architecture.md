@@ -129,6 +129,24 @@ Otimizadores usados hoje:
 - global: `scipy.optimize.differential_evolution`
 - local: `scipy.optimize.minimize(..., method="L-BFGS-B")`
 
+#### `src/inverse/methods.py`
+
+Orquestra os metodos inversos sobre uma unica curva experimental.
+
+Papel:
+
+- rodar o metodo classico em uma amostra experimental
+- rodar a predição direta da MLP
+- rodar o metodo hibrido com refinamento local
+- comparar os metodos e escolher o melhor pelo erro observado
+
+Importante:
+
+- esse modulo nao altera o forward model
+- quando o experimento tem faltas em pontos isolados de `i3` ou `i1`, a entrada da MLP e completada por interpolacao linear
+- a saida direta do metodo `ml` e recortada aos bounds fisicos do projeto
+- o erro fisico continua sendo calculado somente sobre os pontos realmente medidos
+
 ## Camada de dados
 
 #### `src/data/synthetic_generator.py`

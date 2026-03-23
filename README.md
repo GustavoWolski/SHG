@@ -82,6 +82,7 @@ SHG/
 |  |- inverse/
 |  |  |- objective.py
 |  |  |- fitters.py
+|  |  |- methods.py
 |  |- data/
 |  |  |- synthetic_generator.py
 |  |  |- loaders.py
@@ -162,21 +163,43 @@ python main.py simulate --lambda-nm 1560 --n21w 5.6428 --k21w 0.0849 --n22w 2.86
 
 O comando abre graficos de transmissao e reflexao normalizadas.
 
-### 2. Rodar fitting classico
+### 2. Rodar fitting experimental
+
+O subcomando `fit` agora pode operar em quatro modos:
+
+- `--method classical`: fitting classico com `differential_evolution`
+- `--method ml`: predicao direta pela rede treinada
+- `--method hybrid`: rede + refinamento fisico local
+- `--method compare`: roda os tres e indica o melhor pelo erro observado
+
+Exemplo classico:
 
 ```powershell
-python main.py fit --normalization global --seed 7
+python main.py fit --method classical --normalization global --seed 7
 ```
 
 Importante:
 
 - se voce nao passar `--data-path`, `fit` usa dados experimentais de exemplo definidos no proprio codigo
-- ele abre grafico do melhor ajuste e mapa de erro
+- o modo `classical` abre comparacao visual e mapa de erro
+- os modos `ml`, `hybrid` e `compare` exigem `--model-path`
 
-Exemplo com arquivo externo:
+Exemplo `ml`:
 
 ```powershell
-python main.py fit --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --seed 7
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global
+```
+
+Exemplo `hybrid`:
+
+```powershell
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+```
+
+Exemplo `compare`:
+
+```powershell
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --seed 7 --output-dir outputs/fit_compare
 ```
 
 Formato esperado do arquivo externo:
@@ -185,6 +208,13 @@ Formato esperado do arquivo externo:
 - ordem: `d_nm, i3, i1`
 - `i3` e `i1` podem ficar vazios em uma linha especifica; o fitting ignora esses pontos usando mascara
 - se houver cabecalho, use `--skiprows 1`
+
+Observacao importante para `ml` e `hybrid`:
+
+- a mascara da rede e por canal, nao por ponto individual
+- se faltarem alguns pontos dentro de um canal disponivel, o projeto preenche esses pontos por interpolacao linear apenas para a entrada da MLP
+- no modo `ml`, a saida direta da rede e limitada aos bounds fisicos do projeto antes de ser apresentada
+- o erro fisico continua sendo calculado apenas sobre os pontos realmente observados
 
 ### 3. Gerar dataset sintetico
 

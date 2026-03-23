@@ -5,7 +5,9 @@ __pycache__/
 
 #Dataset
 *.npz
+csv_conversor/
 outputs/
+data/
 
 # C extensions
 *.so

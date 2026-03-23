@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.inverse.fitters import FitResult, simulate_fit_result
+from src.inverse.methods import ExperimentalMethodResult
 from src.inverse.objective import NormalizationStrategy, error_function, normalize_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
@@ -150,3 +151,85 @@ def plot_fit_comparison(
     )
     plt.tight_layout()
     _show_or_close_figure(plt, fig)
+
+
+def plot_inverse_method_comparison(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    method_results: dict[str, ExperimentalMethodResult],
+    i3_mask: BoolArray | None = None,
+    i1_mask: BoolArray | None = None,
+) -> None:
+    """Plot experimental SHG points against multiple inverse-method reconstructions."""
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("matplotlib is required to generate SHG plots.") from exc
+
+    observed_i3_mask = np.isfinite(i3_exp) if i3_mask is None else np.asarray(i3_mask, dtype=bool) & np.isfinite(i3_exp)
+    observed_i1_mask = np.isfinite(i1_exp) if i1_mask is None else np.asarray(i1_mask, dtype=bool) & np.isfinite(i1_exp)
+    if not method_results:
+        raise ValueError("method_results must contain at least one inverse-method result.")
+
+    reference_result = next(iter(method_results.values()))
+    normalized_reference = normalize_shg_curves(
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        i3_sim=reference_result.reconstructed_i3,
+        i1_sim=reference_result.reconstructed_i1,
+        strategy=reference_result.normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+    )
+    if normalized_reference is None:
+        raise ValueError("Could not normalize the experimental and reconstructed curves for plotting.")
+    i3_exp_norm, i1_exp_norm, _, _ = normalized_reference
+
+    figure, axes = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+    if np.any(observed_i3_mask):
+        axes[0].plot(d_exp[observed_i3_mask], i3_exp_norm[observed_i3_mask], "ok", label="Exp")
+    if np.any(observed_i1_mask):
+        axes[1].plot(d_exp[observed_i1_mask], i1_exp_norm[observed_i1_mask], "ok", label="Exp")
+
+    method_styles = {
+        "classical": ("-", "black"),
+        "ml": ("--", "royalblue"),
+        "hybrid": (":", "darkorange"),
+    }
+    for method_name, result in method_results.items():
+        normalized_curves = normalize_shg_curves(
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            i3_sim=result.reconstructed_i3,
+            i1_sim=result.reconstructed_i1,
+            strategy=result.normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        if normalized_curves is None:
+            continue
+        _, _, i3_sim_norm, i1_sim_norm = normalized_curves
+        line_style, color = method_styles.get(method_name, ("-", None))
+        axes[0].plot(d_exp, i3_sim_norm, line_style, color=color, linewidth=1.8, label=method_name)
+        axes[1].plot(d_exp, i1_sim_norm, line_style, color=color, linewidth=1.8, label=method_name)
+
+    axes[0].set_ylabel("T (norm)")
+    axes[0].set_title("Comparacao de metodos inversos em i3")
+    axes[0].grid(True)
+    axes[0].legend()
+
+    axes[1].set_xlabel("d (nm)")
+    axes[1].set_ylabel("R (norm)")
+    axes[1].set_title("Comparacao de metodos inversos em i1")
+    axes[1].grid(True)
+    axes[1].legend()
+
+    best_method_name = min(method_results, key=lambda method_name: method_results[method_name].objective_error)
+    figure.suptitle(
+        "Comparacao de metodos SHG "
+        f"| melhor={best_method_name} "
+        f"| erro={method_results[best_method_name].objective_error:.4e}"
+    )
+    plt.tight_layout()
+    _show_or_close_figure(plt, figure)

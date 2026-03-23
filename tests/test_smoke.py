@@ -9,6 +9,7 @@ import numpy as np
 from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
 from src.data.synthetic_generator import generate_synthetic_dataset, save_synthetic_dataset
 from src.inverse.objective import error_function
+from src.inverse.methods import run_hybrid_inverse_method, run_ml_inverse_method
 from src.main import build_parser, resolve_handler
 from src.ml.datasets import from_synthetic_dataset, split_dataset
 from src.ml.evaluate import evaluate_model
@@ -162,6 +163,71 @@ class SmokeTests(unittest.TestCase):
             self.assertEqual(scenario.reconstructed_i3.shape, dataset.i3.shape)
             self.assertEqual(scenario.reconstructed_i1.shape, dataset.i1.shape)
             self.assertEqual(scenario.reconstruction_metrics.simulation_failures, 0)
+
+    def test_ml_and_hybrid_experimental_fit_modes(self) -> None:
+        """ML and hybrid inverse methods should work on one experimental sample with gaps."""
+        thickness_nm = np.arange(0.0, 65.0, 5.0, dtype=np.float64)
+        synthetic_dataset = generate_synthetic_dataset(
+            num_samples=10,
+            d_nm=thickness_nm,
+            lambda_m=1560e-9,
+            seed=25,
+            normalization="global",
+            show_progress=False,
+        )
+        dataset = from_synthetic_dataset(synthetic_dataset)
+        model_config = ModelConfig(
+            input_dim=dataset.input_dim,
+            output_dim=dataset.output_dim,
+            hidden_dims=(32, 16),
+        )
+        training_config = TrainingConfig(
+            epochs=2,
+            batch_size=4,
+            learning_rate=1e-3,
+            seed=25,
+            verbose=False,
+        )
+        training_result = train_model(dataset, model_config, training_config)
+
+        i3_exp = synthetic_dataset.i3[0].copy()
+        i1_exp = synthetic_dataset.i1[0].copy()
+        i3_mask = np.ones_like(i3_exp, dtype=bool)
+        i1_mask = np.ones_like(i1_exp, dtype=bool)
+        i3_mask[[1, 3]] = False
+        i1_mask[[0, 4]] = False
+        i3_exp[~i3_mask] = np.nan
+        i1_exp[~i1_mask] = np.nan
+
+        ml_result = run_ml_inverse_method(
+            d_exp=thickness_nm,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=1560e-9,
+            model=training_result.model,
+            normalization_strategy="global",
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        hybrid_result = run_hybrid_inverse_method(
+            d_exp=thickness_nm,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=1560e-9,
+            model=training_result.model,
+            normalization_strategy="global",
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            local_bounds_mode="neighborhood",
+            neighborhood_fraction=0.1,
+        )
+
+        self.assertEqual(ml_result.parameter_vector.shape, (4,))
+        self.assertEqual(hybrid_result.parameter_vector.shape, (4,))
+        self.assertTrue(np.isfinite(ml_result.objective_error))
+        self.assertTrue(np.isfinite(hybrid_result.objective_error))
+        self.assertEqual(ml_result.reconstructed_i3.shape, thickness_nm.shape)
+        self.assertEqual(hybrid_result.reconstructed_i1.shape, thickness_nm.shape)
 
     def test_train_ml_cli_handler(self) -> None:
         """The train-ml subcommand should train and persist artifacts successfully."""

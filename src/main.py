@@ -13,7 +13,7 @@ from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
 from src.ml.datasets import from_synthetic_dataset, save_dataset_split, split_dataset, subset_dataset
 from src.ml.models import load_model
 from src.physics.shg_model import SHGParams, simulate_shg
-from src.utils.plotting import plot_error_map, plot_fit_comparison, plot_shg_curves
+from src.utils.plotting import plot_error_map, plot_inverse_method_comparison, plot_shg_curves
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
@@ -36,6 +36,12 @@ def build_simulate_parser(subparsers: argparse._SubParsersAction) -> None:
 def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the fit subcommand."""
     parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos ou arquivo externo.")
+    parser.add_argument(
+        "--method",
+        choices=["classical", "ml", "hybrid", "compare"],
+        default="classical",
+        help="Metodo usado na inversao experimental.",
+    )
     parser.add_argument(
         "--data-path",
         type=str,
@@ -71,6 +77,30 @@ def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
         type=int,
         default=None,
         help="Seed opcional para reprodutibilidade do otimizador.",
+    )
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Modelo NPZ treinado, obrigatorio para os modos ml, hybrid e compare.",
+    )
+    parser.add_argument(
+        "--local-bounds",
+        choices=["global", "neighborhood"],
+        default="neighborhood",
+        help="Tipo de bounds usados no refinamento do modo hybrid.",
+    )
+    parser.add_argument(
+        "--neighborhood-fraction",
+        type=float,
+        default=0.1,
+        help="Fracao da largura dos bounds globais usada no refinamento hybrid.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Diretorio opcional para salvar resumo JSON do fit ou da comparacao.",
     )
     parser.set_defaults(handler=handle_fit)
 
@@ -309,34 +339,173 @@ def handle_simulate(args: argparse.Namespace) -> None:
     plot_shg_curves(d_nm, i3, i1)
 
 
-def handle_fit(args: argparse.Namespace) -> None:
-    """Run the inverse fitting workflow with in-code or external experimental data."""
-    from src.inverse.fitters import run_fit
+def print_experimental_method_result(method_name: str, objective_error: float, runtime_seconds: float, parameter_vector: FloatArray) -> None:
+    """Print a compact summary for one experimental inverse-method result."""
+    print(f"\n=== FIT {method_name.upper()} ===")
+    print(f"n21w = {parameter_vector[0]:.4f}")
+    print(f"k21w = {parameter_vector[1]:.4f}")
+    print(f"n22w = {parameter_vector[2]:.4f}")
+    print(f"k22w = {parameter_vector[3]:.4f}")
+    print(f"Erro observado = {objective_error:.6f}")
+    print(f"Tempo = {runtime_seconds:.4f} s")
 
+
+def _require_model_for_fit_method(args: argparse.Namespace) -> None:
+    """Ensure that ML-based fit modes have a trained model available."""
+    if args.method in {"ml", "hybrid", "compare"} and args.model_path is None:
+        raise ValueError("--model-path is required when --method is ml, hybrid or compare.")
+
+
+def handle_fit(args: argparse.Namespace) -> None:
+    """Run the experimental inverse fitting workflow."""
+    from src.inverse.methods import (
+        compare_experimental_methods,
+        run_classical_inverse_method,
+        run_hybrid_inverse_method,
+        run_ml_inverse_method,
+        save_experimental_comparison_summary,
+        save_experimental_method_summary,
+    )
+
+    _require_model_for_fit_method(args)
     d_exp, i3_exp, i1_exp, i3_mask, i1_mask, lambda_m = resolve_fit_data(args)
     normalization_strategy = args.normalization
-    result = run_fit(
-        d_exp,
-        i3_exp,
-        i1_exp,
-        lambda_m,
+    model = load_model(args.model_path) if args.model_path is not None else None
+
+    if args.method == "classical":
+        classical_result = run_classical_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=args.seed,
+        )
+        print_experimental_method_result(
+            "classical",
+            classical_result.objective_error,
+            classical_result.runtime_seconds,
+            classical_result.parameter_vector,
+        )
+        if classical_result.message:
+            print(classical_result.message)
+        plot_inverse_method_comparison(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_results={"classical": classical_result},
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        plot_error_map(
+            d_exp,
+            i3_exp,
+            i1_exp,
+            lambda_m,
+            n22_fixed=float(classical_result.fitted_params.n22w.real),
+            k22_fixed=float(classical_result.fitted_params.n22w.imag),
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        if args.output_dir is not None:
+            summary_path = save_experimental_method_summary(classical_result, Path(args.output_dir) / "fit_classical_summary.json")
+            print(f"Resumo salvo em: {summary_path}")
+        return
+
+    if args.method == "ml":
+        assert model is not None
+        ml_result = run_ml_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            model=model,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        print_experimental_method_result("ml", ml_result.objective_error, ml_result.runtime_seconds, ml_result.parameter_vector)
+        if ml_result.message:
+            print(ml_result.message)
+        plot_inverse_method_comparison(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_results={"ml": ml_result},
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        if args.output_dir is not None:
+            summary_path = save_experimental_method_summary(ml_result, Path(args.output_dir) / "fit_ml_summary.json")
+            print(f"Resumo salvo em: {summary_path}")
+        return
+
+    if args.method == "hybrid":
+        assert model is not None
+        hybrid_result = run_hybrid_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            model=model,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            local_bounds_mode=args.local_bounds,
+            neighborhood_fraction=args.neighborhood_fraction,
+        )
+        print_experimental_method_result("hybrid", hybrid_result.objective_error, hybrid_result.runtime_seconds, hybrid_result.parameter_vector)
+        if hybrid_result.message:
+            print(hybrid_result.message)
+        plot_inverse_method_comparison(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_results={"hybrid": hybrid_result},
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+        )
+        if args.output_dir is not None:
+            summary_path = save_experimental_method_summary(hybrid_result, Path(args.output_dir) / "fit_hybrid_summary.json")
+            print(f"Resumo salvo em: {summary_path}")
+        return
+
+    assert model is not None
+    comparison_report = compare_experimental_methods(
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        lambda_m=lambda_m,
         normalization_strategy=normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        model=model,
         seed=args.seed,
+        local_bounds_mode=args.local_bounds,
+        neighborhood_fraction=args.neighborhood_fraction,
+    )
+    for method_name, result in comparison_report.results.items():
+        print_experimental_method_result(method_name, result.objective_error, result.runtime_seconds, result.parameter_vector)
+        if result.message:
+            print(result.message)
+    print(f"\nMelhor metodo pelo erro observado: {comparison_report.best_method_name}")
+    plot_inverse_method_comparison(
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        method_results=comparison_report.results,
         i3_mask=i3_mask,
         i1_mask=i1_mask,
     )
-    plot_fit_comparison(d_exp, i3_exp, i1_exp, result, i3_mask=i3_mask, i1_mask=i1_mask)
-    plot_error_map(
-        d_exp,
-        i3_exp,
-        i1_exp,
-        lambda_m,
-        n22_fixed=float(result.fitted_params.n22w.real),
-        k22_fixed=float(result.fitted_params.n22w.imag),
-        normalization_strategy=normalization_strategy,
-        i3_mask=i3_mask,
-        i1_mask=i1_mask,
-    )
+    if args.output_dir is not None:
+        summary_path = save_experimental_comparison_summary(
+            comparison_report,
+            Path(args.output_dir) / "fit_compare_summary.json",
+        )
+        print(f"Resumo salvo em: {summary_path}")
 
 
 def handle_generate_dataset(args: argparse.Namespace) -> None:
