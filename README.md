@@ -213,13 +213,27 @@ Observacao importante para `ml` e `hybrid`:
 
 - a mascara da rede e por canal, nao por ponto individual
 - se faltarem alguns pontos dentro de um canal disponivel, o projeto preenche esses pontos por interpolacao linear apenas para a entrada da MLP
+- se o numero de pontos do experimento nao bater com o usado no treino, a curva e reamostrada para a malha esperada pela rede
 - no modo `ml`, a saida direta da rede e limitada aos bounds fisicos do projeto antes de ser apresentada
 - o erro fisico continua sendo calculado apenas sobre os pontos realmente observados
+
+Quando `--output-dir` e informado no `fit`, o projeto salva:
+
+- resumo JSON do metodo executado
+- figura PNG com os pontos experimentais e as curvas reconstruidas
+- figura PNG com o forward model rodado com os melhores parametros obtidos e os pontos experimentais
+- no modo `classical`, tambem salva o mapa de erro
 
 ### 3. Gerar dataset sintetico
 
 ```powershell
 python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
+```
+
+Exemplo usando diretamente a malha de espessuras do experimento:
+
+```powershell
+python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter "," --grid-skiprows 1 --seed 42 --normalization global
 ```
 
 Esse comando salva um `.npz` contendo:
@@ -230,6 +244,12 @@ Esse comando salva um `.npz` contendo:
 - `curves`
 - `parameters`
 - metadados como `lambda`, bounds e seed
+
+Se `--experimental-grid-path` for informado:
+
+- o projeto le a coluna `d_nm` do arquivo experimental
+- essa malha passa a ser a malha usada para todas as simulacoes sinteticas
+- `--d-max-nm` e `--d-step-nm` deixam de ser a fonte da grade
 
 ### 4. Treinar um modelo de ML
 

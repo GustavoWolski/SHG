@@ -13,7 +13,12 @@ from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
 from src.ml.datasets import from_synthetic_dataset, save_dataset_split, split_dataset, subset_dataset
 from src.ml.models import load_model
 from src.physics.shg_model import SHGParams, simulate_shg
-from src.utils.plotting import plot_error_map, plot_inverse_method_comparison, plot_shg_curves
+from src.utils.plotting import (
+    plot_best_simulation_with_experimental_points,
+    plot_error_map,
+    plot_inverse_method_comparison,
+    plot_shg_curves,
+)
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
@@ -113,6 +118,24 @@ def build_generate_dataset_parser(subparsers: argparse._SubParsersAction) -> Non
     parser.add_argument("--lambda-nm", type=float, default=1560.0, help="Comprimento de onda (nm).")
     parser.add_argument("--d-max-nm", type=float, default=600.0, help="Espessura maxima (nm).")
     parser.add_argument("--d-step-nm", type=float, default=1.0, help="Passo de espessura (nm).")
+    parser.add_argument(
+        "--experimental-grid-path",
+        type=str,
+        default=None,
+        help="Arquivo experimental com coluna d_nm para reutilizar a malha de espessuras no dataset sintetico.",
+    )
+    parser.add_argument(
+        "--grid-delimiter",
+        type=str,
+        default=",",
+        help="Delimitador do arquivo usado em --experimental-grid-path.",
+    )
+    parser.add_argument(
+        "--grid-skiprows",
+        type=int,
+        default=0,
+        help="Numero de linhas de cabecalho a ignorar em --experimental-grid-path.",
+    )
     parser.add_argument("--n21w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["n21w"][0], help="Minimo de n21w.")
     parser.add_argument("--n21w-max", type=float, default=DEFAULT_PARAMETER_BOUNDS["n21w"][1], help="Maximo de n21w.")
     parser.add_argument("--k21w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["k21w"][0], help="Minimo de k21w.")
@@ -356,6 +379,19 @@ def _require_model_for_fit_method(args: argparse.Namespace) -> None:
         raise ValueError("--model-path is required when --method is ml, hybrid or compare.")
 
 
+def _fit_output_paths(output_dir: str | None, method_name: str) -> dict[str, Path]:
+    """Build the output paths used to persist fit figures and summaries."""
+    if output_dir is None:
+        return {}
+    base_dir = Path(output_dir)
+    return {
+        "summary": base_dir / f"fit_{method_name}_summary.json",
+        "curves": base_dir / f"fit_{method_name}_curves.png",
+        "simulation": base_dir / f"fit_{method_name}_simulation.png",
+        "error_map": base_dir / f"fit_{method_name}_error_map.png",
+    }
+
+
 def handle_fit(args: argparse.Namespace) -> None:
     """Run the experimental inverse fitting workflow."""
     from src.inverse.methods import (
@@ -373,6 +409,7 @@ def handle_fit(args: argparse.Namespace) -> None:
     model = load_model(args.model_path) if args.model_path is not None else None
 
     if args.method == "classical":
+        output_paths = _fit_output_paths(args.output_dir, "classical")
         classical_result = run_classical_inverse_method(
             d_exp=d_exp,
             i3_exp=i3_exp,
@@ -398,6 +435,7 @@ def handle_fit(args: argparse.Namespace) -> None:
             method_results={"classical": classical_result},
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            output_path=output_paths.get("curves"),
         )
         plot_error_map(
             d_exp,
@@ -409,14 +447,28 @@ def handle_fit(args: argparse.Namespace) -> None:
             normalization_strategy=normalization_strategy,
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            output_path=output_paths.get("error_map"),
+        )
+        plot_best_simulation_with_experimental_points(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_result=classical_result,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("simulation"),
         )
         if args.output_dir is not None:
-            summary_path = save_experimental_method_summary(classical_result, Path(args.output_dir) / "fit_classical_summary.json")
+            summary_path = save_experimental_method_summary(classical_result, output_paths["summary"])
             print(f"Resumo salvo em: {summary_path}")
+            print(f"Figura salva em: {output_paths['curves']}")
+            print(f"Figura salva em: {output_paths['simulation']}")
+            print(f"Figura salva em: {output_paths['error_map']}")
         return
 
     if args.method == "ml":
         assert model is not None
+        output_paths = _fit_output_paths(args.output_dir, "ml")
         ml_result = run_ml_inverse_method(
             d_exp=d_exp,
             i3_exp=i3_exp,
@@ -437,14 +489,27 @@ def handle_fit(args: argparse.Namespace) -> None:
             method_results={"ml": ml_result},
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            output_path=output_paths.get("curves"),
+        )
+        plot_best_simulation_with_experimental_points(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_result=ml_result,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("simulation"),
         )
         if args.output_dir is not None:
-            summary_path = save_experimental_method_summary(ml_result, Path(args.output_dir) / "fit_ml_summary.json")
+            summary_path = save_experimental_method_summary(ml_result, output_paths["summary"])
             print(f"Resumo salvo em: {summary_path}")
+            print(f"Figura salva em: {output_paths['curves']}")
+            print(f"Figura salva em: {output_paths['simulation']}")
         return
 
     if args.method == "hybrid":
         assert model is not None
+        output_paths = _fit_output_paths(args.output_dir, "hybrid")
         hybrid_result = run_hybrid_inverse_method(
             d_exp=d_exp,
             i3_exp=i3_exp,
@@ -467,13 +532,26 @@ def handle_fit(args: argparse.Namespace) -> None:
             method_results={"hybrid": hybrid_result},
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            output_path=output_paths.get("curves"),
+        )
+        plot_best_simulation_with_experimental_points(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_result=hybrid_result,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("simulation"),
         )
         if args.output_dir is not None:
-            summary_path = save_experimental_method_summary(hybrid_result, Path(args.output_dir) / "fit_hybrid_summary.json")
+            summary_path = save_experimental_method_summary(hybrid_result, output_paths["summary"])
             print(f"Resumo salvo em: {summary_path}")
+            print(f"Figura salva em: {output_paths['curves']}")
+            print(f"Figura salva em: {output_paths['simulation']}")
         return
 
     assert model is not None
+    output_paths = _fit_output_paths(args.output_dir, "compare")
     comparison_report = compare_experimental_methods(
         d_exp=d_exp,
         i3_exp=i3_exp,
@@ -499,13 +577,26 @@ def handle_fit(args: argparse.Namespace) -> None:
         method_results=comparison_report.results,
         i3_mask=i3_mask,
         i1_mask=i1_mask,
+        output_path=output_paths.get("curves"),
+    )
+    best_method_result = comparison_report.results[comparison_report.best_method_name]
+    plot_best_simulation_with_experimental_points(
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        method_result=best_method_result,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        output_path=output_paths.get("simulation"),
     )
     if args.output_dir is not None:
         summary_path = save_experimental_comparison_summary(
             comparison_report,
-            Path(args.output_dir) / "fit_compare_summary.json",
+            output_paths["summary"],
         )
         print(f"Resumo salvo em: {summary_path}")
+        print(f"Figura salva em: {output_paths['curves']}")
+        print(f"Figura salva em: {output_paths['simulation']}")
 
 
 def handle_generate_dataset(args: argparse.Namespace) -> None:
@@ -518,7 +609,15 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
         "n22w": (args.n22w_min, args.n22w_max),
         "k22w": (args.k22w_min, args.k22w_max),
     }
-    d_nm = np.arange(0.0, args.d_max_nm + args.d_step_nm, args.d_step_nm, dtype=np.float64)
+    if args.experimental_grid_path is not None:
+        experimental_grid = load_experimental_shg_data(
+            file_path=args.experimental_grid_path,
+            delimiter=args.grid_delimiter,
+            skiprows=args.grid_skiprows,
+        )
+        d_nm = np.asarray(experimental_grid.d_nm, dtype=np.float64)
+    else:
+        d_nm = np.arange(0.0, args.d_max_nm + args.d_step_nm, args.d_step_nm, dtype=np.float64)
     dataset = generate_synthetic_dataset(
         num_samples=args.num_samples,
         d_nm=d_nm,
@@ -532,6 +631,7 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
     print(f"Dataset salvo em: {output_path}")
     print(f"Formato curves: {dataset.curves.shape}")
     print(f"Formato parameters: {dataset.parameters.shape}")
+    print(f"Numero de pontos em d_nm: {dataset.d_nm.size}")
 
 
 def handle_train_ml(args: argparse.Namespace) -> None:

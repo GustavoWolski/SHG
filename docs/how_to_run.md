@@ -129,7 +129,7 @@ python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path d
 Exemplo em modo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --seed 7 --output-dir outputs/fit_compare
+python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization separate --seed 42 --output-dir outputs/fit_compare 
 ```
 
 Opcoes principais hoje:
@@ -156,6 +156,7 @@ O que esse comando faz:
 - abre a comparacao entre curvas experimentais e reconstruidas
 - no modo `classical`, tambem abre o mapa de erro em funcao de `n21w` e `k21w`
 - no modo `compare`, imprime os tres resultados e indica o melhor pelo erro observado
+- se `--output-dir` for informado, salva resumo JSON e graficos PNG
 
 Importante:
 
@@ -163,8 +164,25 @@ Importante:
 - `i3` e `i1` podem ter valores faltantes em linhas especificas; esses pontos sao ignorados no erro do fitting
 - `ml`, `hybrid` e `compare` exigem `--model-path`
 - no `ml` e no `hybrid`, lacunas internas de um canal disponivel sao preenchidas por interpolacao linear apenas para montar a entrada da MLP
+- se o experimento vier com outro numero de pontos, a curva e reamostrada para a malha esperada pela rede
 - no `ml`, a previsao final e recortada aos bounds fisicos do projeto antes de ser exibida
 - se `scipy` nao estiver instalado, o fitting nao roda
+
+Arquivos tipicos salvos pelo `fit` com `--output-dir`:
+
+- `fit_classical_summary.json`
+- `fit_classical_curves.png`
+- `fit_classical_simulation.png`
+- `fit_classical_error_map.png`
+- `fit_ml_summary.json`
+- `fit_ml_curves.png`
+- `fit_ml_simulation.png`
+- `fit_hybrid_summary.json`
+- `fit_hybrid_curves.png`
+- `fit_hybrid_simulation.png`
+- `fit_compare_summary.json`
+- `fit_compare_curves.png`
+- `fit_compare_simulation.png`
 
 ## 5. Gerar dataset sintetico
 
@@ -174,6 +192,12 @@ Exemplo simples:
 
 ```powershell
 python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
+```
+
+Exemplo reutilizando as espessuras de um arquivo experimental:
+
+```powershell
+python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter ',' --grid-skiprows 1 --seed 42 --normalization global
 ```
 
 Exemplo com bounds explicitamente definidos:
@@ -189,6 +213,9 @@ Opcoes importantes:
 - `--lambda-nm`
 - `--d-max-nm`
 - `--d-step-nm`
+- `--experimental-grid-path`
+- `--grid-delimiter`
+- `--grid-skiprows`
 - limites min e max de cada parametro
 - `--normalization {none,global,separate}`
 - `--seed`
@@ -200,6 +227,11 @@ Saida salva:
 - arrays de curvas
 - parametros reais
 - metadados como `lambda_m`, bounds, normalizacao e seed
+
+Observacao:
+
+- se voce passar `--experimental-grid-path`, o dataset sintetico usa exatamente a coluna `d_nm` do arquivo experimental
+- isso e o caminho recomendado quando voce quer treinar a rede na mesma malha do laboratorio
 
 ## 6. Treinar o modelo
 

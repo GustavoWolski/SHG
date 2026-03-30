@@ -284,6 +284,113 @@ class SmokeTests(unittest.TestCase):
             loaded_model = load_model(model_path)
             self.assertEqual(loaded_model.config.hidden_dims, (32, 16))
 
+    def test_generate_dataset_from_experimental_grid(self) -> None:
+        """The dataset generator should reuse d_nm from an experimental CSV when requested."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            experimental_path = Path(temporary_directory) / "experimental.csv"
+            experimental_path.write_text(
+                "d_nm,i3,i1\n65,0.1,\n80,0.2,0.3\n100,,0.4\n150,0.5,0.6\n",
+                encoding="utf-8",
+            )
+            output_path = Path(temporary_directory) / "synthetic_from_grid.npz"
+
+            parser = build_parser()
+            args = parser.parse_args(
+                [
+                    "generate-dataset",
+                    "--num-samples",
+                    "5",
+                    "--output",
+                    str(output_path),
+                    "--experimental-grid-path",
+                    str(experimental_path),
+                    "--grid-delimiter",
+                    ",",
+                    "--grid-skiprows",
+                    "1",
+                    "--seed",
+                    "19",
+                    "--normalization",
+                    "global",
+                    "--no-progress",
+                ]
+            )
+            handler = resolve_handler(args, parser)
+            self.assertIsNotNone(handler)
+            assert handler is not None
+            handler(args)
+
+            dataset = load_synthetic_dataset(output_path)
+            self.assertTrue(np.array_equal(dataset.d_nm, np.array([65.0, 80.0, 100.0, 150.0], dtype=np.float64)))
+            self.assertEqual(dataset.i3.shape, (5, 4))
+            self.assertEqual(dataset.i1.shape, (5, 4))
+
+    def test_fit_ml_cli_saves_summary_and_figure(self) -> None:
+        """The fit subcommand should save summary and plot artifacts in ML mode."""
+        thickness_nm = np.array([65.0, 80.0, 100.0, 150.0, 190.0], dtype=np.float64)
+        synthetic_dataset = generate_synthetic_dataset(
+            num_samples=10,
+            d_nm=thickness_nm,
+            lambda_m=1560e-9,
+            seed=41,
+            normalization="global",
+            show_progress=False,
+        )
+        dataset = from_synthetic_dataset(synthetic_dataset)
+        model_config = ModelConfig(
+            input_dim=dataset.input_dim,
+            output_dim=dataset.output_dim,
+            hidden_dims=(32, 16),
+        )
+        training_config = TrainingConfig(
+            epochs=2,
+            batch_size=4,
+            learning_rate=1e-3,
+            seed=41,
+            verbose=False,
+        )
+        training_result = train_model(dataset, model_config, training_config)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            model_path = save_model(training_result.model, Path(temporary_directory) / "model.npz")
+            experimental_path = Path(temporary_directory) / "experimental.csv"
+            experimental_path.write_text(
+                "d_nm,i3,i1\n65,0.10,\n80,0.20,0.30\n100,,0.40\n150,0.50,0.60\n190,0.70,0.80\n",
+                encoding="utf-8",
+            )
+            output_dir = Path(temporary_directory) / "fit_ml_outputs"
+
+            parser = build_parser()
+            args = parser.parse_args(
+                [
+                    "fit",
+                    "--method",
+                    "ml",
+                    "--model-path",
+                    str(model_path),
+                    "--data-path",
+                    str(experimental_path),
+                    "--lambda-nm",
+                    "1560",
+                    "--delimiter",
+                    ",",
+                    "--skiprows",
+                    "1",
+                    "--normalization",
+                    "global",
+                    "--output-dir",
+                    str(output_dir),
+                ]
+            )
+            handler = resolve_handler(args, parser)
+            self.assertIsNotNone(handler)
+            assert handler is not None
+            handler(args)
+
+            self.assertTrue((output_dir / "fit_ml_summary.json").exists())
+            self.assertTrue((output_dir / "fit_ml_curves.png").exists())
+            self.assertTrue((output_dir / "fit_ml_simulation.png").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

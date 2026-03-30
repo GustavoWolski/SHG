@@ -1,5 +1,6 @@
 """Plotting helpers for SHG analysis."""
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -8,6 +9,7 @@ import numpy.typing as npt
 from src.inverse.fitters import FitResult, simulate_fit_result
 from src.inverse.methods import ExperimentalMethodResult
 from src.inverse.objective import NormalizationStrategy, error_function, normalize_shg_curves
+from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
@@ -21,7 +23,21 @@ def _show_or_close_figure(plt: Any, figure: Any) -> None:
     plt.close(figure)
 
 
-def plot_shg_curves(d_nm: FloatArray, i3: FloatArray, i1: FloatArray) -> None:
+def _finalize_figure(plt: Any, figure: Any, output_path: str | Path | None = None) -> None:
+    """Optionally save the figure, then show or close it."""
+    if output_path is not None:
+        output = Path(output_path)
+        ensure_directory(output.parent)
+        figure.savefig(output, dpi=180, bbox_inches="tight")
+    _show_or_close_figure(plt, figure)
+
+
+def plot_shg_curves(
+    d_nm: FloatArray,
+    i3: FloatArray,
+    i1: FloatArray,
+    output_path: str | Path | None = None,
+) -> None:
     """Plot normalized transmitted and reflected SHG curves."""
     try:
         import matplotlib.pyplot as plt
@@ -44,7 +60,7 @@ def plot_shg_curves(d_nm: FloatArray, i3: FloatArray, i1: FloatArray) -> None:
 
     fig.suptitle("SHG sim (T/R)")
     plt.tight_layout()
-    _show_or_close_figure(plt, fig)
+    _finalize_figure(plt, fig, output_path=output_path)
 
 
 def plot_error_map(
@@ -57,6 +73,7 @@ def plot_error_map(
     normalization_strategy: NormalizationStrategy = "global",
     i3_mask: BoolArray | None = None,
     i1_mask: BoolArray | None = None,
+    output_path: str | Path | None = None,
 ) -> None:
     """Plot the error map varying n21w and k21w."""
     try:
@@ -94,7 +111,7 @@ def plot_error_map(
     axis.set_xlabel("n21w")
     axis.set_ylabel("k21w")
     axis.set_title("Mapa do Erro")
-    _show_or_close_figure(plt, fig)
+    _finalize_figure(plt, fig, output_path=output_path)
 
 
 def plot_fit_comparison(
@@ -104,6 +121,7 @@ def plot_fit_comparison(
     fit_result: FitResult,
     i3_mask: BoolArray | None = None,
     i1_mask: BoolArray | None = None,
+    output_path: str | Path | None = None,
 ) -> None:
     """Plot experimental and best-fit simulated SHG curves."""
     try:
@@ -150,7 +168,7 @@ def plot_fit_comparison(
         f"| norm={fit_result.normalization_strategy}"
     )
     plt.tight_layout()
-    _show_or_close_figure(plt, fig)
+    _finalize_figure(plt, fig, output_path=output_path)
 
 
 def plot_inverse_method_comparison(
@@ -160,6 +178,7 @@ def plot_inverse_method_comparison(
     method_results: dict[str, ExperimentalMethodResult],
     i3_mask: BoolArray | None = None,
     i1_mask: BoolArray | None = None,
+    output_path: str | Path | None = None,
 ) -> None:
     """Plot experimental SHG points against multiple inverse-method reconstructions."""
     try:
@@ -232,4 +251,61 @@ def plot_inverse_method_comparison(
         f"| erro={method_results[best_method_name].objective_error:.4e}"
     )
     plt.tight_layout()
-    _show_or_close_figure(plt, figure)
+    _finalize_figure(plt, figure, output_path=output_path)
+
+
+def plot_best_simulation_with_experimental_points(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    method_result: ExperimentalMethodResult,
+    i3_mask: BoolArray | None = None,
+    i1_mask: BoolArray | None = None,
+    output_path: str | Path | None = None,
+) -> None:
+    """Plot best-fit simulated curves with the same normalization used in fitting."""
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("matplotlib is required to generate SHG plots.") from exc
+
+    observed_i3_mask = np.isfinite(i3_exp) if i3_mask is None else np.asarray(i3_mask, dtype=bool) & np.isfinite(i3_exp)
+    observed_i1_mask = np.isfinite(i1_exp) if i1_mask is None else np.asarray(i1_mask, dtype=bool) & np.isfinite(i1_exp)
+    normalized_curves = normalize_shg_curves(
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        i3_sim=method_result.reconstructed_i3,
+        i1_sim=method_result.reconstructed_i1,
+        strategy=method_result.normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+    )
+    if normalized_curves is None:
+        raise ValueError("Could not normalize the experimental and simulated curves for plotting.")
+    i3_exp_norm, i1_exp_norm, i3_sim_norm, i1_sim_norm = normalized_curves
+
+    figure, axes = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+    if np.any(observed_i3_mask):
+        axes[0].plot(d_exp[observed_i3_mask], i3_exp_norm[observed_i3_mask], "ok", label="Exp")
+    axes[0].plot(d_exp, i3_sim_norm, "-r", linewidth=1.8, label="Sim")
+    axes[0].set_ylabel("i3 (norm)")
+    axes[0].set_title(f"Simulacao com melhores parametros | {method_result.method_name}")
+    axes[0].grid(True)
+    axes[0].legend()
+
+    if np.any(observed_i1_mask):
+        axes[1].plot(d_exp[observed_i1_mask], i1_exp_norm[observed_i1_mask], "ok", label="Exp")
+    axes[1].plot(d_exp, i1_sim_norm, "-b", linewidth=1.8, label="Sim")
+    axes[1].set_xlabel("d (nm)")
+    axes[1].set_ylabel("i1 (norm)")
+    axes[1].grid(True)
+    axes[1].legend()
+
+    figure.suptitle(
+        "Forward model com parametros obtidos "
+        f"| metodo={method_result.method_name} "
+        f"| erro={method_result.objective_error:.4e} "
+        f"| norm={method_result.normalization_strategy}"
+    )
+    plt.tight_layout()
+    _finalize_figure(plt, figure, output_path=output_path)
