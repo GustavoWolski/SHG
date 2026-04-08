@@ -96,6 +96,9 @@ def normalize_shg_curves(
     raise ValueError(f"Unknown normalization strategy: {strategy}")
 
 
+ChannelWeights = Optional[tuple[float, float]]
+
+
 def error_function(
     x: Sequence[float],
     d_exp: FloatArray,
@@ -105,9 +108,16 @@ def error_function(
     normalization_strategy: NormalizationStrategy = "global",
     i3_mask: Optional[BoolArray] = None,
     i1_mask: Optional[BoolArray] = None,
+    channel_weights: ChannelWeights = None,
 ) -> float:
-    """Compute the fitting error, ignoring missing experimental samples via masks."""
+    """Compute the fitting error, ignoring missing experimental samples via masks.
+
+    When *channel_weights* is supplied as ``(w_i3, w_i1)``, each channel
+    MSE is multiplied by the corresponding weight before summation.  The
+    default ``None`` is equivalent to ``(1.0, 1.0)``.
+    """
     params = build_shg_params(x, lambda_m)
+    w_i3, w_i1 = channel_weights if channel_weights is not None else (1.0, 1.0)
 
     try:
         i3_sim, i1_sim = simulate_shg(params, d_exp)
@@ -133,10 +143,10 @@ def error_function(
     channel_errors: list[float] = []
     if np.any(observed_i3_mask):
         transmission_error = np.mean((i3_exp_norm[observed_i3_mask] - i3_sim_norm[observed_i3_mask]) ** 2)
-        channel_errors.append(float(transmission_error))
+        channel_errors.append(float(w_i3 * transmission_error))
     if np.any(observed_i1_mask):
         reflection_error = np.mean((i1_exp_norm[observed_i1_mask] - i1_sim_norm[observed_i1_mask]) ** 2)
-        channel_errors.append(float(reflection_error))
+        channel_errors.append(float(w_i1 * reflection_error))
     if not channel_errors:
         return LARGE_ERROR_PENALTY
     return float(sum(channel_errors))

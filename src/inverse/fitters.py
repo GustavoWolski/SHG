@@ -11,17 +11,15 @@ from typing import Any, Optional
 import numpy as np
 import numpy.typing as npt
 
-from src.inverse.objective import NormalizationStrategy, build_shg_params, error_function
+from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function
 from src.physics.shg_model import SHGParams, simulate_shg
+from src.data.synthetic_generator import DEFAULT_PARAMETER_BOUNDS, PARAMETER_NAMES
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
 
 DEFAULT_BOUNDS: list[tuple[float, float]] = [
-    (3.0, 7.0),
-    (0.0, 1.0),
-    (2.0, 5.0),
-    (0.0, 1.0),
+    DEFAULT_PARAMETER_BOUNDS[name] for name in PARAMETER_NAMES
 ]
 
 
@@ -97,6 +95,7 @@ def run_fit(
     verbose: bool = True,
     i3_mask: Optional[BoolArray] = None,
     i1_mask: Optional[BoolArray] = None,
+    channel_weights: ChannelWeights = None,
 ) -> FitResult:
     """Run differential evolution as the baseline SHG inverse solver."""
     try:
@@ -107,7 +106,7 @@ def run_fit(
     optimizer_result = differential_evolution(
         error_function,
         bounds=bounds or DEFAULT_BOUNDS,
-        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy, i3_mask, i1_mask),
+        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy, i3_mask, i1_mask, channel_weights),
         strategy="best1bin",
         maxiter=100,
         popsize=20,
@@ -138,6 +137,7 @@ def refine_fit_locally(
     verbose: bool = False,
     i3_mask: Optional[BoolArray] = None,
     i1_mask: Optional[BoolArray] = None,
+    channel_weights: ChannelWeights = None,
 ) -> FitResult:
     """Refine SHG parameters locally starting from an informed initial guess."""
     try:
@@ -154,7 +154,7 @@ def refine_fit_locally(
     optimizer_result = minimize(
         error_function,
         x0=clipped_initial_guess,
-        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy, i3_mask, i1_mask),
+        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy, i3_mask, i1_mask, channel_weights),
         method="L-BFGS-B",
         bounds=local_bounds,
     )

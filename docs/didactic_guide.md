@@ -129,6 +129,12 @@ Desvantagem:
 
 - costuma ser lento, especialmente quando se avaliam muitas amostras
 
+Observacao pratica importante para laboratorio:
+
+- o fit so e confiavel se a janela de busca dos parametros fizer sentido para o material real
+- por isso o projeto agora permite ajustar bounds diretamente no CLI do `fit`
+- se o melhor resultado encosta no limite minimo ou maximo de um parametro, isso costuma ser um sinal de que a faixa precisa ser revisada
+
 ## Por que gerar dados sinteticos
 
 Para treinar um modelo de ML, normalmente sao necessarias muitas amostras.
@@ -196,6 +202,12 @@ Isso e feito com uma mascara de entrada:
 
 Durante o treino, o projeto remove aleatoriamente um dos canais em parte das amostras. Assim, a rede aprende a continuar operando mesmo com informacao incompleta.
 
+Para dado de laboratorio, isso significa:
+
+- voce pode deixar uma celula vazia quando um ponto de `i3` ou `i1` nao foi medido
+- no fitting fisico, esses pontos ausentes sao simplesmente ignorados no calculo do erro
+- no `ml` e no `hybrid`, lacunas internas sao interpoladas apenas para montar a entrada da rede; o erro fisico continua sendo avaliado apenas onde ha observacao real
+
 ## Por que avaliar reconstrucao fisica alem do erro dos parametros
 
 Um modelo pode acertar "mais ou menos" os parametros e ainda assim reconstruir bem as curvas.
@@ -236,6 +248,12 @@ Intuicao:
 - o ML da velocidade
 - a fisica local tenta recuperar precisao fina
 
+Mas isso so funciona bem quando:
+
+- o dataset sintetico foi gerado com bounds compativeis com o experimento
+- a malha de espessuras do treino se parece com a malha do laboratorio
+- o experimento nao esta muito fora do dominio coberto pelas simulacoes sinteticas
+
 ## Por que comparar classico, ML e hibrido
 
 Cada abordagem tem um perfil diferente:
@@ -269,6 +287,33 @@ Ponto forte:
 Ponto fraco:
 
 - ainda depende da qualidade da previsao inicial e do refinamento local
+
+## Como adaptar o projeto para o melhor fit possivel em dado real
+
+Para aproximar o melhor fit experimental possivel, o usuario deve tratar o projeto como um pipeline adaptavel, nao como uma caixa-preta.
+
+As decisoes mais importantes sao:
+
+- formato do CSV experimental
+  use um arquivo com 3 colunas nomeadas `d_nm`, `i3` e `i1`; se houver cabecalho, `i3` e `i1` podem aparecer em qualquer ordem
+- qualidade da malha experimental
+  quanto melhor a distribuicao de pontos nas regioes de maior variacao da curva, melhor a identificacao dos parametros
+- escolha dos bounds
+  bounds muito estreitos podem forcar um parametro para a borda; bounds muito largos podem aumentar ambiguidades e tempo de busca
+- pesos por canal
+  o projeto agora permite aumentar ou reduzir a influencia de `i3` e `i1` na funcao objetivo, o que ajuda quando um canal esta mais ruidoso que o outro
+- coerencia entre treino e experimento
+  se voce usar ML ou metodo hibrido, o dataset sintetico deve refletir a mesma malha `d_nm`, a mesma faixa de parametros e uma normalizacao compativel com o laboratorio
+
+Em termos praticos, um bom procedimento e:
+
+1. rodar primeiro o fit classico
+2. ajustar bounds e pesos ate obter um erro baixo sem parametros presos nas bordas
+3. gerar dataset sintetico na malha experimental
+4. treinar a rede apenas depois de decidir bounds fisicamente plausiveis
+5. comparar `classical`, `ml` e `hybrid` no mesmo experimento
+
+Esse cuidado e importante porque, em problemas inversos, uma curva pode parecer bem ajustada mesmo quando os parametros recuperados ainda nao estao bem identificados.
 
 Comparar os tres ajuda a responder uma pergunta pratica importante:
 

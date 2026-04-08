@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit
-from src.inverse.objective import NormalizationStrategy, build_shg_params, error_function
+from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function
 from src.ml.datasets import build_input_features
 from src.ml.models import MLPRegressor
 from src.physics.shg_model import SHGParams, simulate_shg
@@ -142,6 +142,7 @@ def _build_result(
     channel_mask: tuple[bool, bool],
     used_interpolation: bool,
     message: str = "",
+    channel_weights: ChannelWeights = None,
 ) -> ExperimentalMethodResult:
     """Build a typed inverse-method result from a parameter vector."""
     fitted_params = build_shg_params(parameter_vector, lambda_m)
@@ -155,6 +156,7 @@ def _build_result(
         normalization_strategy=normalization_strategy,
         i3_mask=i3_mask,
         i1_mask=i1_mask,
+        channel_weights=channel_weights,
     )
     return ExperimentalMethodResult(
         method_name=method_name,
@@ -216,6 +218,8 @@ def run_classical_inverse_method(
     i3_mask: BoolArray,
     i1_mask: BoolArray,
     seed: Optional[int] = None,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    channel_weights: ChannelWeights = None,
 ) -> ExperimentalMethodResult:
     """Run the baseline classical SHG inverse method on one experiment."""
     start_time = time.perf_counter()
@@ -224,11 +228,13 @@ def run_classical_inverse_method(
         i3_exp=i3_exp,
         i1_exp=i1_exp,
         lambda_m=lambda_m,
+        bounds=bounds,
         normalization_strategy=normalization_strategy,
         seed=seed,
         verbose=False,
         i3_mask=i3_mask,
         i1_mask=i1_mask,
+        channel_weights=channel_weights,
     )
     runtime_seconds = time.perf_counter() - start_time
     return _build_result(
@@ -245,6 +251,7 @@ def run_classical_inverse_method(
         channel_mask=(_channel_observed(i3_mask), _channel_observed(i1_mask)),
         used_interpolation=False,
         message=fit_result.message,
+        channel_weights=channel_weights,
     )
 
 
@@ -257,6 +264,7 @@ def run_ml_inverse_method(
     normalization_strategy: NormalizationStrategy,
     i3_mask: BoolArray,
     i1_mask: BoolArray,
+    channel_weights: ChannelWeights = None,
 ) -> ExperimentalMethodResult:
     """Run direct MLP-based parameter prediction on one experiment."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
@@ -288,6 +296,7 @@ def run_ml_inverse_method(
         channel_mask=channel_mask,
         used_interpolation=used_interpolation,
         message=message,
+        channel_weights=channel_weights,
     )
 
 
@@ -302,6 +311,7 @@ def run_hybrid_inverse_method(
     i1_mask: BoolArray,
     local_bounds_mode: LocalBoundsMode = "neighborhood",
     neighborhood_fraction: float = 0.1,
+    channel_weights: ChannelWeights = None,
 ) -> ExperimentalMethodResult:
     """Run MLP initialization followed by bounded physical local refinement."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
@@ -324,6 +334,7 @@ def run_hybrid_inverse_method(
         verbose=False,
         i3_mask=i3_mask,
         i1_mask=i1_mask,
+        channel_weights=channel_weights,
     )
     runtime_seconds = time.perf_counter() - start_time
     message = fit_result.message
@@ -345,6 +356,7 @@ def run_hybrid_inverse_method(
         channel_mask=channel_mask,
         used_interpolation=used_interpolation,
         message=message,
+        channel_weights=channel_weights,
     )
 
 
@@ -360,6 +372,8 @@ def compare_experimental_methods(
     seed: Optional[int] = None,
     local_bounds_mode: LocalBoundsMode = "neighborhood",
     neighborhood_fraction: float = 0.1,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    channel_weights: ChannelWeights = None,
 ) -> ExperimentalComparisonReport:
     """Compare the inverse methods on one experimental SHG sample."""
     if model is None:
@@ -375,6 +389,8 @@ def compare_experimental_methods(
             i3_mask=i3_mask,
             i1_mask=i1_mask,
             seed=seed,
+            bounds=bounds,
+            channel_weights=channel_weights,
         ),
         "ml": run_ml_inverse_method(
             d_exp=d_exp,
@@ -385,6 +401,7 @@ def compare_experimental_methods(
             normalization_strategy=normalization_strategy,
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            channel_weights=channel_weights,
         ),
         "hybrid": run_hybrid_inverse_method(
             d_exp=d_exp,
@@ -397,6 +414,7 @@ def compare_experimental_methods(
             i1_mask=i1_mask,
             local_bounds_mode=local_bounds_mode,
             neighborhood_fraction=neighborhood_fraction,
+            channel_weights=channel_weights,
         ),
     }
     best_method_name = min(results, key=lambda method_name: results[method_name].objective_error)

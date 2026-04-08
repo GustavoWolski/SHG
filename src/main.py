@@ -107,6 +107,16 @@ def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Diretorio opcional para salvar resumo JSON do fit ou da comparacao.",
     )
+    parser.add_argument("--n21w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["n21w"][0], help="Bound inferior de n21w no fitting.")
+    parser.add_argument("--n21w-max", type=float, default=DEFAULT_PARAMETER_BOUNDS["n21w"][1], help="Bound superior de n21w no fitting.")
+    parser.add_argument("--k21w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["k21w"][0], help="Bound inferior de k21w no fitting.")
+    parser.add_argument("--k21w-max", type=float, default=DEFAULT_PARAMETER_BOUNDS["k21w"][1], help="Bound superior de k21w no fitting.")
+    parser.add_argument("--n22w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["n22w"][0], help="Bound inferior de n22w no fitting.")
+    parser.add_argument("--n22w-max", type=float, default=DEFAULT_PARAMETER_BOUNDS["n22w"][1], help="Bound superior de n22w no fitting.")
+    parser.add_argument("--k22w-min", type=float, default=DEFAULT_PARAMETER_BOUNDS["k22w"][0], help="Bound inferior de k22w no fitting.")
+    parser.add_argument("--k22w-max", type=float, default=DEFAULT_PARAMETER_BOUNDS["k22w"][1], help="Bound superior de k22w no fitting.")
+    parser.add_argument("--i3-weight", type=float, default=1.0, help="Peso do canal i3 (transmissao) na funcao objetivo.")
+    parser.add_argument("--i1-weight", type=float, default=1.0, help="Peso do canal i1 (reflexao) na funcao objetivo.")
     parser.set_defaults(handler=handle_fit)
 
 
@@ -407,6 +417,13 @@ def handle_fit(args: argparse.Namespace) -> None:
     d_exp, i3_exp, i1_exp, i3_mask, i1_mask, lambda_m = resolve_fit_data(args)
     normalization_strategy = args.normalization
     model = load_model(args.model_path) if args.model_path is not None else None
+    fit_bounds: list[tuple[float, float]] = [
+        (args.n21w_min, args.n21w_max),
+        (args.k21w_min, args.k21w_max),
+        (args.n22w_min, args.n22w_max),
+        (args.k22w_min, args.k22w_max),
+    ]
+    channel_weights = (float(args.i3_weight), float(args.i1_weight))
 
     if args.method == "classical":
         output_paths = _fit_output_paths(args.output_dir, "classical")
@@ -419,6 +436,8 @@ def handle_fit(args: argparse.Namespace) -> None:
             i3_mask=i3_mask,
             i1_mask=i1_mask,
             seed=args.seed,
+            bounds=fit_bounds,
+            channel_weights=channel_weights,
         )
         print_experimental_method_result(
             "classical",
@@ -478,6 +497,7 @@ def handle_fit(args: argparse.Namespace) -> None:
             normalization_strategy=normalization_strategy,
             i3_mask=i3_mask,
             i1_mask=i1_mask,
+            channel_weights=channel_weights,
         )
         print_experimental_method_result("ml", ml_result.objective_error, ml_result.runtime_seconds, ml_result.parameter_vector)
         if ml_result.message:
@@ -521,6 +541,7 @@ def handle_fit(args: argparse.Namespace) -> None:
             i1_mask=i1_mask,
             local_bounds_mode=args.local_bounds,
             neighborhood_fraction=args.neighborhood_fraction,
+            channel_weights=channel_weights,
         )
         print_experimental_method_result("hybrid", hybrid_result.objective_error, hybrid_result.runtime_seconds, hybrid_result.parameter_vector)
         if hybrid_result.message:
@@ -564,6 +585,8 @@ def handle_fit(args: argparse.Namespace) -> None:
         seed=args.seed,
         local_bounds_mode=args.local_bounds,
         neighborhood_fraction=args.neighborhood_fraction,
+        bounds=fit_bounds,
+        channel_weights=channel_weights,
     )
     for method_name, result in comparison_report.results.items():
         print_experimental_method_result(method_name, result.objective_error, result.runtime_seconds, result.parameter_vector)

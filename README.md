@@ -187,27 +187,47 @@ Importante:
 Exemplo `ml`:
 
 ```powershell
-python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global
 ```
 
 Exemplo `hybrid`:
 
 ```powershell
-python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
 ```
 
 Exemplo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization global --seed 7 --output-dir outputs/fit_compare
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 7 --output-dir outputs/fit_compare
 ```
 
 Formato esperado do arquivo externo:
 
 - exatamente 3 colunas numericas
-- ordem: `d_nm, i3, i1`
+- se houver cabecalho com os nomes `d_nm`, `i3` e `i1`, o loader usa os nomes e aceita `d_nm, i3, i1` ou `d_nm, i1, i3`
+- se nao houver cabecalho, o projeto assume a ordem posicional `d_nm, i3, i1`
 - `i3` e `i1` podem ficar vazios em uma linha especifica; o fitting ignora esses pontos usando mascara
-- se houver cabecalho, use `--skiprows 1`
+- `--skiprows` deve ser usado apenas quando houver linhas extras antes do cabecalho ou antes da primeira linha numerica
+
+Novos controles importantes no `fit`:
+
+- bounds fisicos por parametro: `--n21w-min`, `--n21w-max`, `--k21w-min`, `--k21w-max`, `--n22w-min`, `--n22w-max`, `--k22w-min`, `--k22w-max`
+- peso por canal na funcao objetivo: `--i3-weight` e `--i1-weight`
+
+Exemplo classico com bounds e pesos ajustados para dado de laboratorio:
+
+```powershell
+python main.py fit --method classical --data-path data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.5 --n21w-max 6.5 --n22w-min 1.0 --n22w-max 6.0 --i3-weight 1.5 --i1-weight 0.7 --seed 7 --output-dir outputs/fit_classical_lab
+```
+
+Como interpretar esses novos controles:
+
+- use bounds mais largos quando voce ainda nao conhece bem o material
+- estreite os bounds quando ja houver informacao fisica externa, porque isso ajuda a reduzir ambiguidades do problema inverso
+- aumente `--i3-weight` se a transmissao for mais confiavel experimentalmente
+- aumente `--i1-weight` se a reflexao tiver melhor relacao sinal-ruido
+- reduza o peso do canal mais ruidoso em vez de forcar o fit a seguir ruido instrumental
 
 Observacao importante para `ml` e `hybrid`:
 
@@ -224,6 +244,27 @@ Quando `--output-dir` e informado no `fit`, o projeto salva:
 - figura PNG com o forward model rodado com os melhores parametros obtidos e os pontos experimentais
 - no modo `classical`, tambem salva o mapa de erro
 
+### Estrategia recomendada para o melhor fit em dado de laboratorio
+
+Para dado experimental real, o melhor resultado normalmente nao vem de um unico comando. O fluxo recomendado e:
+
+1. prepare o CSV com 3 colunas nomeadas `d_nm`, `i3`, `i1`; se a ordem das duas ultimas colunas variar, o loader corrige isso pelo cabecalho
+2. preserve valores faltantes apenas onde o ponto realmente nao foi medido; nao substitua por zero
+3. rode primeiro o metodo `classical` com bounds fisicos relativamente amplos e salve o resultado com `--output-dir`
+4. compare `--normalization global` e `--normalization separate`; a melhor escolha depende de como o laboratorio normalizou os canais
+5. ajuste `--i3-weight` e `--i1-weight` conforme a confianca em cada canal
+6. observe se o melhor ajuste encosta nos limites de algum parametro; se isso acontecer, amplie os bounds e rode novamente
+7. se voce pretende usar `ml` ou `hybrid`, gere um dataset sintetico com a mesma malha `d_nm` do experimento usando `--experimental-grid-path`
+8. treine a rede com bounds coerentes com o seu material; a rede nao consegue extrapolar bem para fora do espaco sintetico em que foi treinada
+9. use `compare` para decidir entre `classical`, `ml` e `hybrid` pelo erro observado no seu experimento
+
+Sinais de que voce ainda precisa adaptar melhor o pipeline:
+
+- o melhor parametro aparece repetidamente colado no minimo ou no maximo do bound
+- pequenas mudancas em `seed`, normalizacao ou pesos mudam demais os parametros recuperados
+- a curva ajustada parece boa, mas os parametros fisicos resultantes nao fazem sentido para o material
+- a malha experimental tem poucos pontos ou ignora justamente a regiao em que a curva varia mais rapido
+
 ### 3. Gerar dataset sintetico
 
 ```powershell
@@ -233,7 +274,7 @@ python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_da
 Exemplo usando diretamente a malha de espessuras do experimento:
 
 ```powershell
-python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter "," --grid-skiprows 1 --seed 42 --normalization global
+python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter "," --seed 42 --normalization global
 ```
 
 Esse comando salva um `.npz` contendo:
@@ -476,13 +517,15 @@ Agora o CLI aceita seus dados, desde que o arquivo esteja no formato esperado.
 Use:
 
 ```powershell
-python main.py fit --data-path caminho/do/arquivo.csv --lambda-nm 1560 --delimiter "," --skiprows 1
+python main.py fit --data-path caminho/do/arquivo.csv --lambda-nm 1560 --delimiter ","
 ```
 
 Lembre:
 
-- o arquivo deve ter 3 colunas numericas: `d_nm, i3, i1`
+- se houver cabecalho com `d_nm`, `i3` e `i1`, o loader aceita `d_nm, i3, i1` ou `d_nm, i1, i3`
+- sem cabecalho, o arquivo deve continuar na ordem posicional `d_nm, i3, i1`
 - valores faltantes em `i3` ou `i1` sao aceitos no CSV externo
+- `--skiprows` so e necessario quando existem linhas extras antes do cabecalho ou antes da primeira linha numerica
 - se voce nao passar `--data-path`, o CLI cai no conjunto interno de exemplo
 
 ## O Que Este Projeto Nao Faz
@@ -500,6 +543,7 @@ Tambem e importante dizer:
 - o modelo fisico implementado e uma formulacao especifica de SHG, nao "a fisica inteira de SHG"
 - existe um `TODO` explicito no modulo fisico sobre a revisao teorica de um termo `0k` backward
 - os resultados de ML dependem fortemente dos bounds, da qualidade do dataset sintetico e da forma como os dados sao separados
+- em dado de laboratorio, um fit aparentemente bom pode continuar mal identificado se houver poucos pontos, ruido alto ou bounds muito largos
 
 ## Documentacao Complementar
 

@@ -111,25 +111,31 @@ python main.py fit --method classical --normalization global --seed 7
 Exemplo usando arquivo experimental externo:
 
 ```powershell
-python main.py fit --method classical --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --seed 7
+python main.py fit --method classical --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global --seed 7
 ```
 
 Exemplo em modo `ml`:
 
 ```powershell
-python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global
 ```
 
 Exemplo em modo `hybrid`:
 
 ```powershell
-python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --skiprows 1 --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
 ```
 
 Exemplo em modo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --skiprows 1 --normalization separate --seed 42 --output-dir outputs/fit_compare 
+python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization separate --seed 42 --output-dir outputs/fit_compare 
+```
+
+Exemplo com bounds fisicos customizados e pesos por canal:
+
+```powershell
+python main.py fit --method classical --data-path data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 1.3 --i1-weight 0.8 --seed 42 --output-dir outputs/fit_classical_lab
 ```
 
 Opcoes principais hoje:
@@ -146,6 +152,8 @@ Opcoes principais hoje:
 - `--local-bounds`
 - `--neighborhood-fraction`
 - `--output-dir`
+- `--n21w-min`, `--n21w-max`, `--k21w-min`, `--k21w-max`, `--n22w-min`, `--n22w-max`, `--k22w-min`, `--k22w-max`
+- `--i3-weight`, `--i1-weight`
 
 O que esse comando faz:
 
@@ -160,13 +168,33 @@ O que esse comando faz:
 
 Importante:
 
-- o arquivo experimental precisa ter exatamente 3 colunas: `d_nm`, `i3`, `i1`
+- se houver cabecalho com os nomes `d_nm`, `i3` e `i1`, o loader aceita as colunas `i3` e `i1` em qualquer ordem
+- sem cabecalho, o arquivo experimental continua precisando estar na ordem posicional `d_nm`, `i3`, `i1`
 - `i3` e `i1` podem ter valores faltantes em linhas especificas; esses pontos sao ignorados no erro do fitting
+- `--skiprows` so e necessario quando ha linhas extras antes do cabecalho ou antes dos dados numericos
 - `ml`, `hybrid` e `compare` exigem `--model-path`
 - no `ml` e no `hybrid`, lacunas internas de um canal disponivel sao preenchidas por interpolacao linear apenas para montar a entrada da MLP
 - se o experimento vier com outro numero de pontos, a curva e reamostrada para a malha esperada pela rede
 - no `ml`, a previsao final e recortada aos bounds fisicos do projeto antes de ser exibida
 - se `scipy` nao estiver instalado, o fitting nao roda
+
+Como usar bounds e pesos para melhorar o fit:
+
+- comece com bounds amplos, mas fisicamente plausiveis para o material
+- se o melhor ajuste encostar no limite minimo ou maximo, amplie a faixa e teste novamente
+- se a transmissao `i3` for mais estavel que `i1`, aumente `--i3-weight`
+- se a reflexao `i1` estiver mais limpa experimentalmente, aumente `--i1-weight`
+- se um canal estiver muito contaminado por ruido, reduza seu peso em vez de descartar todo o canal
+
+Fluxo recomendado para dado de laboratorio:
+
+1. monte um CSV com `d_nm`, `i3` e `i1`; deixe celulas vazias onde nao houve medicao
+2. rode `fit --method classical` com `--output-dir` para inspecionar curvas e mapa de erro
+3. teste `--normalization global` e `--normalization separate`
+4. ajuste bounds e pesos ate obter um ajuste que nao fique colado nas bordas do espaco de busca
+5. use `generate-dataset --experimental-grid-path` para criar um dataset sintetico na mesma malha do laboratorio
+6. treine a MLP com bounds coerentes com seu experimento
+7. rode `fit --method compare` para decidir entre classico, ML e hibrido pelo erro observado
 
 Arquivos tipicos salvos pelo `fit` com `--output-dir`:
 
@@ -197,14 +225,19 @@ python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_da
 Exemplo reutilizando as espessuras de um arquivo experimental:
 
 ```powershell
-python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter ',' --grid-skiprows 1 --seed 42 --normalization global
+python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter ',' --seed 42 --normalization global
 ```
 
 Exemplo com bounds explicitamente definidos:
 
 ```powershell
-python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --n21w-min 3.0 --n21w-max 7.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 2.0 --n22w-max 5.0 --k22w-min 0.0 --k22w-max 1.0 --seed 42 --normalization separate
+python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --seed 42 --normalization separate
 ```
+
+Recomendacao importante para adaptacao experimental:
+
+- use os mesmos bounds no `generate-dataset` e no `fit` quando voce treinar uma MLP para um material especifico
+- se os bounds do treino forem muito diferentes dos bounds usados no fitting experimental, o metodo `ml` ou `hybrid` tende a perder confianca e estabilidade
 
 Opcoes importantes:
 
@@ -454,8 +487,11 @@ Verifique:
 Confira:
 
 - se voce passou `--data-path`
-- se o arquivo tem exatamente 3 colunas no formato `d_nm, i3, i1`
+- se o arquivo tem exatamente 3 colunas numericas de interesse
+- se houver cabecalho com `d_nm`, `i3` e `i1`, o loader aceita `d_nm, i3, i1` ou `d_nm, i1, i3`
+- se nao houver cabecalho, mantenha a ordem posicional `d_nm, i3, i1`
 - se os vazios aparecem apenas em `i3` e/ou `i1` e nao em `d_nm`
+- se `--skiprows` esta sendo usado apenas para pular linhas extras antes do cabecalho ou antes dos dados numericos
 - se `--lambda-nm` corresponde ao experimento que voce quer ajustar
 - se voce passou `--model-path` ao usar `--method ml`, `--method hybrid` ou `--method compare`
 
@@ -474,6 +510,7 @@ Mesmo que o pipeline rode, ainda e importante lembrar:
 - ha um ponto teorico no modulo fisico marcado como `TODO`
 - o treino e feito sobre dados sinteticos, nao sobre experimento real
 - a qualidade dos resultados depende fortemente dos bounds escolhidos
+- pesos por canal e normalizacao tambem influenciam bastante o resultado em dado de laboratorio
 
 ## 13. Smoke tests do repositorio
 

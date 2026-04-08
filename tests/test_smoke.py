@@ -85,6 +85,21 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(np.array_equal(loaded.i3_mask, np.array([True, False, True, False], dtype=bool)))
         self.assertTrue(np.array_equal(loaded.i1_mask, np.array([False, True, True, False], dtype=bool)))
 
+    def test_experimental_loader_reorders_columns_by_header(self) -> None:
+        """The loader should assign columns by header name regardless of order."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            csv_i3_i1 = Path(temporary_directory) / "standard.csv"
+            csv_i3_i1.write_text("d_nm,i3,i1\n10,0.5,0.2\n20,0.6,0.3\n", encoding="utf-8")
+            loaded_standard = load_experimental_shg_data(csv_i3_i1)
+
+            csv_i1_i3 = Path(temporary_directory) / "swapped.csv"
+            csv_i1_i3.write_text("d_nm,i1,i3\n10,0.2,0.5\n20,0.3,0.6\n", encoding="utf-8")
+            loaded_swapped = load_experimental_shg_data(csv_i1_i3)
+
+        np.testing.assert_array_almost_equal(loaded_standard.i3, loaded_swapped.i3)
+        np.testing.assert_array_almost_equal(loaded_standard.i1, loaded_swapped.i1)
+        np.testing.assert_array_almost_equal(loaded_standard.d_nm, loaded_swapped.d_nm)
+
     def test_objective_supports_missing_experimental_values(self) -> None:
         """The inverse objective should ignore missing i3/i1 samples through masks."""
         thickness_nm = np.array([0.0, 10.0, 20.0, 30.0], dtype=np.float64)
