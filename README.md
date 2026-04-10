@@ -187,19 +187,19 @@ Importante:
 Exemplo `ml`:
 
 ```powershell
-python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global
 ```
 
 Exemplo `hybrid`:
 
 ```powershell
-python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
 ```
 
 Exemplo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 7 --output-dir outputs/fit_compare
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 7 --output-dir outputs/fit_compare
 ```
 
 Formato esperado do arquivo externo:
@@ -218,7 +218,7 @@ Novos controles importantes no `fit`:
 Exemplo classico com bounds e pesos ajustados para dado de laboratorio:
 
 ```powershell
-python main.py fit --method classical --data-path data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.5 --n21w-max 6.5 --n22w-min 1.0 --n22w-max 6.0 --i3-weight 1.5 --i1-weight 0.7 --seed 7 --output-dir outputs/fit_classical_lab
+python main.py fit --method classical --data-path src/data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.5 --n21w-max 6.5 --n22w-min 1.0 --n22w-max 6.0 --i3-weight 1.5 --i1-weight 0.7 --seed 7 --output-dir outputs/fit_classical_lab
 ```
 
 Como interpretar esses novos controles:
@@ -268,13 +268,13 @@ Sinais de que voce ainda precisa adaptar melhor o pipeline:
 ### 3. Gerar dataset sintetico
 
 ```powershell
-python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
+python main.py generate-dataset --num-samples 500 --output src/data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
 ```
 
 Exemplo usando diretamente a malha de espessuras do experimento:
 
 ```powershell
-python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter "," --seed 42 --normalization global
+python main.py generate-dataset --num-samples 5000 --output src/data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path src/data/experimental_fit.csv --grid-delimiter "," --seed 42 --normalization global
 ```
 
 Esse comando salva um `.npz` contendo:
@@ -295,7 +295,7 @@ Se `--experimental-grid-path` for informado:
 ### 4. Treinar um modelo de ML
 
 ```powershell
-python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --seed 42
+python main.py train-ml --dataset-path src/data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --seed 42
 ```
 
 Esse comando:
@@ -308,17 +308,20 @@ Esse comando:
 - salva um resumo JSON com historico de loss e hiperparametros
 - salva `dataset_split.json` com os indices usados no split
 - executa avaliacao automatica nos conjuntos de validacao e teste
+- nao exporta automaticamente um arquivo separado como `src/data/shg_test.npz`
 
 ### 5. Avaliar um modelo de ML treinado
 
+Se voce acabou de rodar `train-ml`, pode consultar diretamente `outputs/train_ml/test/evaluation_summary.json`. Para rodar `evaluate-ml`, passe um dataset sintetico `.npz` gerado por `generate-dataset`.
+
 ```powershell
-python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/evaluate_ml
+python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path src/data/shg_synthetic_dataset.npz --output-dir outputs/evaluate_ml
 ```
 
 Esse comando:
 
 - carrega o modelo salvo
-- carrega o dataset de teste
+- carrega o dataset sintetico informado
 - avalia tres cenarios de entrada:
   - `i3_i1`
   - `i3_only`
@@ -328,7 +331,7 @@ Esse comando:
 ### 6. Comparar metodos
 
 ```powershell
-python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/compare_methods --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1 --max-samples 10 --classical-seed 3
+python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path src/data/shg_synthetic_dataset.npz --output-dir outputs/compare_methods --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1 --max-samples 10 --classical-seed 3
 ```
 
 Esse comando compara:
@@ -354,7 +357,7 @@ from src.ml.datasets import from_synthetic_dataset
 from src.ml.models import ModelConfig, save_model
 from src.ml.train import TrainingConfig, train_model
 
-dataset = from_synthetic_dataset(load_synthetic_dataset("data/shg_synthetic_dataset.npz"))
+dataset = from_synthetic_dataset(load_synthetic_dataset("src/data/shg_synthetic_dataset.npz"))
 model_config = ModelConfig(
     input_dim=dataset.input_dim,
     output_dim=dataset.output_dim,
@@ -383,7 +386,7 @@ Observacao importante:
 ### Entradas
 
 - datasets sinteticos gerados por CLI:
-  - por padrao em `data/shg_synthetic_dataset.npz`
+  - por padrao em `src/data/shg_synthetic_dataset.npz`
 - datasets de teste:
   - caminho livre, informado em `--dataset-path`
 - dados experimentais do fitting CLI:

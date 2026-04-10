@@ -79,7 +79,7 @@ Use o subcomando `simulate` para rodar o forward model e abrir as curvas na tela
 Exemplo:
 
 ```powershell
-python main.py simulate --lambda-nm 1560 --n21w 5.6428 --k21w 0.0849 --n22w 2.8698 --k22w 0.4492 --d-max-nm 600 --d-step-nm 1
+python main.py simulate --lambda-nm 1560 --n21w 5.6428 --k21w 0.0849 --n22w 2.8698 --k22w 0.4492 --d-max-nm 600 --d-step-nm 1 --output-path outputs/sim.png
 ```
 
 O que esse comando faz:
@@ -111,31 +111,31 @@ python main.py fit --method classical --normalization global --seed 7
 Exemplo usando arquivo experimental externo:
 
 ```powershell
-python main.py fit --method classical --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global --seed 7
+python main.py fit --method classical --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter ',' --normalization separate --seed 7 --output-dir outputs/fit_classical
 ```
 
 Exemplo em modo `ml`:
 
 ```powershell
-python main.py fit --method ml --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global
+python main.py fit --method ml --model-path models/shg_mlp.npz --data-path src/data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global
 ```
 
 Exemplo em modo `hybrid`:
 
 ```powershell
-python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path src/data/experimental_shg.csv --lambda-nm 1560 --delimiter ',' --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
 ```
 
 Exemplo em modo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization separate --seed 42 --output-dir outputs/fit_compare 
+python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization separate --seed 42 --output-dir outputs/fit_compare 
 ```
 
 Exemplo com bounds fisicos customizados e pesos por canal:
 
 ```powershell
-python main.py fit --method classical --data-path data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 1.3 --i1-weight 0.8 --seed 42 --output-dir outputs/fit_classical_lab
+python main.py fit --method classical --data-path src/data/experimental_fit.csv --lambda-nm 1560 --normalization global --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 1.3 --i1-weight 0.8 --seed 42 --output-dir outputs/fit_classical_lab
 ```
 
 Opcoes principais hoje:
@@ -219,19 +219,19 @@ Use `generate-dataset` para criar amostras simuladas em `.npz`.
 Exemplo simples:
 
 ```powershell
-python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
+python main.py generate-dataset --num-samples 500 --output src/data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --seed 42 --normalization global
 ```
 
 Exemplo reutilizando as espessuras de um arquivo experimental:
 
 ```powershell
-python main.py generate-dataset --num-samples 5000 --output data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path data/experimental_fit.csv --grid-delimiter ',' --seed 42 --normalization global
+python main.py generate-dataset --num-samples 5000 --output src/data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path src/data/experimental_fit.csv --grid-delimiter ',' --seed 42 --normalization global
 ```
 
 Exemplo com bounds explicitamente definidos:
 
 ```powershell
-python main.py generate-dataset --num-samples 500 --output data/shg_synthetic_dataset.npz --lambda-nm 1560 --d-max-nm 600 --d-step-nm 1 --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --seed 42 --normalization separate
+python main.py generate-dataset --num-samples 50000 --output src/data/shg_synthetic_dataset.npz --lambda-nm 1560 --experimental-grid-path src/data/experimental_fit.csv --grid-delimiter ',' --d-max-nm 600 --d-step-nm 1 --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --seed 42 --normalization separate
 ```
 
 Recomendacao importante para adaptacao experimental:
@@ -271,7 +271,7 @@ Observacao:
 Use `train-ml` para transformar um dataset sintetico em um modelo `.npz`.
 
 ```powershell
-python main.py train-ml --dataset-path data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --train-fraction 0.7 --validation-fraction 0.15 --test-fraction 0.15 --seed 42 --split-seed 42 --verbose
+python main.py train-ml --dataset-path src/data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --train-fraction 0.7 --validation-fraction 0.15 --test-fraction 0.15 --seed 42 --split-seed 42 --verbose
 ```
 
 Observacoes importantes:
@@ -306,12 +306,18 @@ Se voce quiser continuar usando a API Python, o modulo `src/ml/train.py` segue d
 
 ## 7. Avaliar o modelo
 
-Use `evaluate-ml` para avaliar parametros previstos e reconstrucao fisica.
+Use `evaluate-ml` para avaliar parametros previstos e reconstrucao fisica em um dataset sintetico `.npz` compativel.
+
+Importante:
+
+- `train-ml` ja gera avaliacao automatica nos subconjuntos de validacao e teste em `outputs/train_ml/validation` e `outputs/train_ml/test`
+- `train-ml` nao gera automaticamente um arquivo separado como `src/data/shg_test.npz`
+- para usar `evaluate-ml`, passe um dataset `.npz` gerado por `generate-dataset`, como `src/data/shg_synthetic_dataset.npz`
 
 Exemplo:
 
 ```powershell
-python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/evaluate_ml
+python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path src/data/shg_synthetic_dataset.npz --output-dir outputs/evaluate_ml
 ```
 
 Opcoes reais:
@@ -325,7 +331,7 @@ Opcoes reais:
 O que esse comando faz:
 
 - carrega o modelo treinado
-- carrega o dataset de teste
+- carrega o dataset sintetico informado em `--dataset-path`
 - avalia tres cenarios:
   - `i3_i1`
   - `i3_only`
@@ -356,10 +362,12 @@ Use `compare-methods` para comparar:
 - ML direto
 - metodo hibrido
 
+Assim como `evaluate-ml`, esse comando espera um dataset sintetico `.npz` salvo separadamente.
+
 Exemplo:
 
 ```powershell
-python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/compare_methods --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1 --max-samples 10 --classical-seed 3
+python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path src/data/shg_synthetic_dataset.npz --output-dir outputs/compare_methods --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1 --max-samples 10 --classical-seed 3
 ```
 
 Opcoes reais:
@@ -431,27 +439,29 @@ print("validacao ok")
 ### Passo B. Gerar dataset sintetico
 
 ```powershell
-python main.py generate-dataset --num-samples 1000 --output data/shg_train.npz --seed 42 --normalization global
+python main.py generate-dataset --num-samples 1000 --output src/data/shg_train.npz --seed 42 --normalization global
 ```
 
 ### Passo C. Treinar a MLP via CLI
 
 ```powershell
-python main.py train-ml --dataset-path data/shg_train.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --seed 42
+python main.py train-ml --dataset-path src/data/shg_train.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --seed 42
 ```
 
 ### Passo D. Avaliar no conjunto de teste
 
-O `train-ml` ja gera avaliacao automatica nos subconjuntos de validacao e teste criados no split. Se quiser rodar uma avaliacao separada sobre outro `.npz`, use:
+O `train-ml` ja gera avaliacao automatica nos subconjuntos de validacao e teste criados no split. Se voce so quiser revisar o resultado do treino, consulte `outputs/train_ml/validation/evaluation_summary.json` e `outputs/train_ml/test/evaluation_summary.json`.
+
+Se quiser rodar uma avaliacao separada sobre um `.npz` sintetico ja existente, por exemplo o mesmo dataset gerado no Passo B, use:
 
 ```powershell
-python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/evaluate_ml
+python main.py evaluate-ml --model-path models/shg_mlp.npz --dataset-path src/data/shg_train.npz --output-dir outputs/evaluate_ml
 ```
 
 ### Passo E. Comparar os tres metodos
 
 ```powershell
-python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path data/shg_test.npz --output-dir outputs/compare_methods --max-samples 10
+python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path src/data/shg_train.npz --output-dir outputs/compare_methods --max-samples 10
 ```
 
 ## 11. Problemas comuns

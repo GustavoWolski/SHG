@@ -35,6 +35,7 @@ def build_simulate_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--k22w", type=float, default=0.4492, help="Parte imag de n22w.")
     parser.add_argument("--d-max-nm", type=float, default=600.0, help="Espessura maxima (nm).")
     parser.add_argument("--d-step-nm", type=float, default=1.0, help="Passo de espessura (nm).")
+    parser.add_argument("--output-path", type=str, default=None, help="Caminho para salvar a figura (ex: outputs/sim.png). Se omitido, tenta exibir na tela.")
     parser.set_defaults(handler=handle_simulate)
 
 
@@ -124,7 +125,7 @@ def build_generate_dataset_parser(subparsers: argparse._SubParsersAction) -> Non
     """Register the synthetic dataset generation subcommand."""
     parser = subparsers.add_parser("generate-dataset", help="Gera dataset sintetico em formato NPZ.")
     parser.add_argument("--num-samples", type=int, default=100, help="Numero de amostras sinteticas.")
-    parser.add_argument("--output", type=str, default="data/shg_synthetic_dataset.npz", help="Arquivo NPZ de saida.")
+    parser.add_argument("--output", type=str, default="src/data/shg_synthetic_dataset.npz", help="Arquivo NPZ de saida.")
     parser.add_argument("--lambda-nm", type=float, default=1560.0, help="Comprimento de onda (nm).")
     parser.add_argument("--d-max-nm", type=float, default=600.0, help="Espessura maxima (nm).")
     parser.add_argument("--d-step-nm", type=float, default=1.0, help="Passo de espessura (nm).")
@@ -234,9 +235,14 @@ def build_train_ml_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def build_evaluate_ml_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the ML evaluation subcommand."""
-    parser = subparsers.add_parser("evaluate-ml", help="Avalia um modelo de ML em dataset de teste.")
+    parser = subparsers.add_parser("evaluate-ml", help="Avalia um modelo de ML em um dataset sintetico SHG salvo em NPZ.")
     parser.add_argument("--model-path", type=str, required=True, help="Arquivo NPZ com o modelo treinado.")
-    parser.add_argument("--dataset-path", type=str, required=True, help="Arquivo NPZ com o dataset de teste.")
+    parser.add_argument(
+        "--dataset-path",
+        type=str,
+        required=True,
+        help="Arquivo NPZ com dataset sintetico compativel, por exemplo gerado por generate-dataset.",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -259,9 +265,14 @@ def build_evaluate_ml_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def build_compare_methods_parser(subparsers: argparse._SubParsersAction) -> None:
     """Register the method-comparison subcommand."""
-    parser = subparsers.add_parser("compare-methods", help="Compara metodos de inversao SHG.")
+    parser = subparsers.add_parser("compare-methods", help="Compara metodos de inversao SHG em um dataset sintetico SHG salvo em NPZ.")
     parser.add_argument("--model-path", type=str, required=True, help="Arquivo NPZ com o modelo treinado.")
-    parser.add_argument("--dataset-path", type=str, required=True, help="Arquivo NPZ com o dataset de teste.")
+    parser.add_argument(
+        "--dataset-path",
+        type=str,
+        required=True,
+        help="Arquivo NPZ com dataset sintetico compativel, por exemplo gerado por generate-dataset.",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -291,7 +302,7 @@ def build_compare_methods_parser(subparsers: argparse._SubParsersAction) -> None
         "--max-samples",
         type=int,
         default=None,
-        help="Limita o numero de amostras do teste para a comparacao.",
+        help="Limita o numero de amostras do dataset informado para a comparacao.",
     )
     parser.add_argument(
         "--examples-per-group",
@@ -369,7 +380,7 @@ def handle_simulate(args: argparse.Namespace) -> None:
     )
 
     i3, i1 = simulate_shg(params, d_nm)
-    plot_shg_curves(d_nm, i3, i1)
+    plot_shg_curves(d_nm, i3, i1, output_path=args.output_path)
 
 
 def print_experimental_method_result(method_name: str, objective_error: float, runtime_seconds: float, parameter_vector: FloatArray) -> None:
