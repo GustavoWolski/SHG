@@ -129,7 +129,7 @@ python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path s
 Exemplo em modo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp_expgrid.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization separate --seed 42 --output-dir outputs/fit_compare 
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 42 --output-dir outputs/fit_compare --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 0.1 --i1-weight 1.5
 ```
 
 Exemplo com bounds fisicos customizados e pesos por canal:

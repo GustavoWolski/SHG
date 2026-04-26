@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit
-from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function
+from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function, normalize_shg_curves
 from src.ml.datasets import build_input_features
 from src.ml.models import MLPRegressor
 from src.physics.shg_model import SHGParams, simulate_shg
@@ -26,6 +26,22 @@ FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
 MethodName = Literal["classical", "ml", "hybrid"]
 LocalBoundsMode = Literal["global", "neighborhood"]
+
+
+def _compute_channel_metrics(exp_values: FloatArray, sim_values: FloatArray, mask: BoolArray) -> Optional[dict[str, float]]:
+    """Compute per-channel error metrics on observed (masked) points.
+
+    Returns ``None`` when no observed points exist for the channel.
+    """
+    observed_mask = np.asarray(mask, dtype=bool)
+    if not np.any(observed_mask):
+        return None
+    residuals = exp_values[observed_mask] - sim_values[observed_mask]
+    mse = float((residuals ** 2).mean())
+    mae = float(np.abs(residuals).mean())
+    rmse = float(mse ** 0.5)
+    max_abs_error = float(np.abs(residuals).max())
+    return {"mse": mse, "mae": mae, "rmse": rmse, "max_abs_error": max_abs_error}
 
 
 @dataclass
@@ -42,11 +58,47 @@ class ExperimentalMethodResult:
     normalization_strategy: NormalizationStrategy
     channel_mask: tuple[bool, bool]
     used_interpolation: bool
+    d_exp: FloatArray = None
+    i3_exp: FloatArray = None
+    i1_exp: FloatArray = None
+    i3_mask: BoolArray = None
+    i1_mask: BoolArray = None
     message: str = ""
+
+    def _channel_metrics_dict(self) -> dict[str, object]:
+        """Compute per-channel and global metrics using normalized curves."""
+        if self.d_exp is None or self.i3_exp is None or self.i1_exp is None:
+            return {}
+        normalized = normalize_shg_curves(
+            i3_exp=self.i3_exp,
+            i1_exp=self.i1_exp,
+            i3_sim=self.reconstructed_i3,
+            i1_sim=self.reconstructed_i1,
+            strategy=self.normalization_strategy,
+            i3_mask=self.i3_mask,
+            i1_mask=self.i1_mask,
+        )
+        if normalized is None:
+            return {}
+        i3_exp_n, i1_exp_n, i3_sim_n, i1_sim_n = normalized
+        i3_obs = np.ones(len(i3_exp_n), dtype=bool) if self.i3_mask is None else np.asarray(self.i3_mask, dtype=bool)
+        i1_obs = np.ones(len(i1_exp_n), dtype=bool) if self.i1_mask is None else np.asarray(self.i1_mask, dtype=bool)
+        i3_metrics = _compute_channel_metrics(i3_exp_n, i3_sim_n, i3_obs)
+        i1_metrics = _compute_channel_metrics(i1_exp_n, i1_sim_n, i1_obs)
+        available_mses = [m["mse"] for m in (i3_metrics, i1_metrics) if m is not None]
+        result: dict[str, object] = {}
+        if available_mses:
+            result["mean_channel_mse"] = sum(available_mses) / len(available_mses)
+        if i3_metrics is not None:
+            result["i3"] = i3_metrics
+        if i1_metrics is not None:
+            result["i1"] = i1_metrics
+        return result
 
     def summary_dict(self) -> dict[str, object]:
         """Return a JSON-serializable summary of the method result."""
-        return {
+        metrics = self._channel_metrics_dict()
+        result: dict[str, object] = {
             "method_name": self.method_name,
             "objective_error": self.objective_error,
             "runtime_seconds": self.runtime_seconds,
@@ -60,6 +112,9 @@ class ExperimentalMethodResult:
             "used_interpolation": self.used_interpolation,
             "message": self.message,
         }
+        if metrics:
+            result["metrics"] = metrics
+        return result
 
 
 @dataclass
@@ -169,6 +224,11 @@ def _build_result(
         normalization_strategy=normalization_strategy,
         channel_mask=channel_mask,
         used_interpolation=used_interpolation,
+        d_exp=np.asarray(d_exp, dtype=np.float64),
+        i3_exp=np.asarray(i3_exp, dtype=np.float64),
+        i1_exp=np.asarray(i1_exp, dtype=np.float64),
+        i3_mask=np.asarray(i3_mask, dtype=bool),
+        i1_mask=np.asarray(i1_mask, dtype=bool),
         message=message,
     )
 
