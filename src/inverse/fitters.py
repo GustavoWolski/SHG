@@ -126,6 +126,46 @@ def run_fit(
     return fit_result
 
 
+def run_natural_fit(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    lambda_m: float,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    normalization_strategy: NormalizationStrategy = "global",
+    seed: Optional[int] = None,
+    verbose: bool = True,
+    i3_mask: Optional[BoolArray] = None,
+    i1_mask: Optional[BoolArray] = None,
+    channel_weights: ChannelWeights = None,
+) -> FitResult:
+    """Run dual annealing as a natural-computation SHG inverse solver."""
+    try:
+        from scipy.optimize import dual_annealing
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("scipy is required to run the inverse fitting routine.") from exc
+
+    optimizer_result = dual_annealing(
+        error_function,
+        bounds=bounds or DEFAULT_BOUNDS,
+        args=(d_exp, i3_exp, i1_exp, lambda_m, normalization_strategy, i3_mask, i1_mask, channel_weights),
+        maxiter=80,
+        seed=seed,
+        no_local_search=True,
+    )
+
+    fit_result = _build_fit_result(
+        optimizer_result=optimizer_result,
+        lambda_m=lambda_m,
+        normalization_strategy=normalization_strategy,
+        seed=seed,
+        optimizer_name="dual_annealing",
+    )
+    if verbose:
+        print_fit_summary(fit_result)
+    return fit_result
+
+
 def refine_fit_locally(
     d_exp: FloatArray,
     i3_exp: FloatArray,

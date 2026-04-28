@@ -44,7 +44,7 @@ def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos ou arquivo externo.")
     parser.add_argument(
         "--method",
-        choices=["classical", "ml", "hybrid", "compare"],
+        choices=["classical", "natural", "ml", "hybrid", "compare"],
         default="classical",
         help="Metodo usado na inversao experimental.",
     )
@@ -419,6 +419,7 @@ def handle_fit(args: argparse.Namespace) -> None:
         compare_experimental_methods,
         run_classical_inverse_method,
         run_hybrid_inverse_method,
+        run_natural_inverse_method,
         run_ml_inverse_method,
         save_experimental_comparison_summary,
         save_experimental_method_summary,
@@ -494,6 +495,53 @@ def handle_fit(args: argparse.Namespace) -> None:
             print(f"Figura salva em: {output_paths['curves']}")
             print(f"Figura salva em: {output_paths['simulation']}")
             print(f"Figura salva em: {output_paths['error_map']}")
+        return
+
+    if args.method == "natural":
+        output_paths = _fit_output_paths(args.output_dir, "natural")
+        natural_result = run_natural_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=args.seed,
+            bounds=fit_bounds,
+            channel_weights=channel_weights,
+        )
+        print_experimental_method_result(
+            "natural",
+            natural_result.objective_error,
+            natural_result.runtime_seconds,
+            natural_result.parameter_vector,
+        )
+        if natural_result.message:
+            print(natural_result.message)
+        plot_inverse_method_comparison(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_results={"natural": natural_result},
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("curves"),
+        )
+        plot_best_simulation_with_experimental_points(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_result=natural_result,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("simulation"),
+        )
+        if args.output_dir is not None:
+            summary_path = save_experimental_method_summary(natural_result, output_paths["summary"])
+            print(f"Resumo salvo em: {summary_path}")
+            print(f"Figura salva em: {output_paths['curves']}")
+            print(f"Figura salva em: {output_paths['simulation']}")
         return
 
     if args.method == "ml":
@@ -805,7 +853,7 @@ def handle_evaluate_ml(args: argparse.Namespace) -> None:
 
 
 def handle_compare_methods(args: argparse.Namespace) -> None:
-    """Compare classical, ML and hybrid SHG inversion methods."""
+    """Compare classical, natural, ML and hybrid SHG inversion methods."""
     from src.ml.compare import compare_methods
 
     dataset = from_synthetic_dataset(load_synthetic_dataset(args.dataset_path))

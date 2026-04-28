@@ -95,12 +95,13 @@ Observacao:
 
 ## 4. Rodar fitting experimental
 
-Use o subcomando `fit` para executar a inversao experimental em um de quatro modos:
+Use o subcomando `fit` para executar a inversao experimental em um de cinco modos:
 
 - `classical`: fitting classico com `differential_evolution`
+- `natural`: otimizacao global por computacao natural (`dual_annealing`)
 - `ml`: predicao direta da rede treinada
 - `hybrid`: rede neural seguida de refinamento fisico local
-- `compare`: executa os tres modos acima e aponta o melhor pelo erro observado
+- `compare`: executa os quatro modos acima e aponta o melhor pelo erro observado
 
 Exemplo usando o conjunto interno de fallback:
 
@@ -140,7 +141,7 @@ python main.py fit --method classical --data-path src/data/experimental_fit.csv 
 
 Opcoes principais hoje:
 
-- `--method {classical,ml,hybrid,compare}`
+- `--method {classical,natural,ml,hybrid,compare}`
 - `--data-path`
 - `--lambda-nm`
 - `--delimiter`
@@ -163,7 +164,7 @@ O que esse comando faz:
 - mostra os parametros previstos, o erro observado e o tempo
 - abre a comparacao entre curvas experimentais e reconstruidas
 - no modo `classical`, tambem abre o mapa de erro em funcao de `n21w` e `k21w`
-- no modo `compare`, imprime os tres resultados e indica o melhor pelo erro observado
+- no modo `compare`, imprime os quatro resultados e indica o melhor pelo erro observado
 - se `--output-dir` for informado, salva resumo JSON e graficos PNG
 
 Importante:
@@ -194,7 +195,7 @@ Fluxo recomendado para dado de laboratorio:
 4. ajuste bounds e pesos ate obter um ajuste que nao fique colado nas bordas do espaco de busca
 5. use `generate-dataset --experimental-grid-path` para criar um dataset sintetico na mesma malha do laboratorio
 6. treine a MLP com bounds coerentes com seu experimento
-7. rode `fit --method compare` para decidir entre classico, ML e hibrido pelo erro observado
+7. rode `fit --method compare` para decidir entre classico, natural, ML e hibrido pelo erro observado
 
 Arquivos tipicos salvos pelo `fit` com `--output-dir`:
 
@@ -359,6 +360,7 @@ outputs/evaluate_ml/
 Use `compare-methods` para comparar:
 
 - fitting classico
+- fitting natural
 - ML direto
 - metodo hibrido
 
@@ -387,6 +389,7 @@ Opcoes reais:
 O que esse comando faz:
 
 - executa o metodo classico amostra por amostra
+- executa o metodo natural amostra por amostra
 - executa a predicao direta por MLP
 - executa o refinamento hibrido a partir da MLP
 - mede erro parametrico, reconstrucao fisica e tempo

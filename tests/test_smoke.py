@@ -9,7 +9,7 @@ import numpy as np
 from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
 from src.data.synthetic_generator import generate_synthetic_dataset, save_synthetic_dataset
 from src.inverse.objective import error_function
-from src.inverse.methods import run_hybrid_inverse_method, run_ml_inverse_method
+from src.inverse.methods import run_hybrid_inverse_method, run_ml_inverse_method, run_natural_inverse_method
 from src.main import build_parser, resolve_handler
 from src.ml.datasets import from_synthetic_dataset, split_dataset
 from src.ml.evaluate import evaluate_model
@@ -180,7 +180,7 @@ class SmokeTests(unittest.TestCase):
             self.assertEqual(scenario.reconstruction_metrics.simulation_failures, 0)
 
     def test_ml_and_hybrid_experimental_fit_modes(self) -> None:
-        """ML and hybrid inverse methods should work on one experimental sample with gaps."""
+        """Natural, ML and hybrid methods should work on one experimental sample with gaps."""
         thickness_nm = np.arange(0.0, 65.0, 5.0, dtype=np.float64)
         synthetic_dataset = generate_synthetic_dataset(
             num_samples=10,
@@ -224,6 +224,16 @@ class SmokeTests(unittest.TestCase):
             i3_mask=i3_mask,
             i1_mask=i1_mask,
         )
+        natural_result = run_natural_inverse_method(
+            d_exp=thickness_nm,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=1560e-9,
+            normalization_strategy="global",
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=25,
+        )
         hybrid_result = run_hybrid_inverse_method(
             d_exp=thickness_nm,
             i3_exp=i3_exp,
@@ -238,8 +248,10 @@ class SmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(ml_result.parameter_vector.shape, (4,))
+        self.assertEqual(natural_result.parameter_vector.shape, (4,))
         self.assertEqual(hybrid_result.parameter_vector.shape, (4,))
         self.assertTrue(np.isfinite(ml_result.objective_error))
+        self.assertTrue(np.isfinite(natural_result.objective_error))
         self.assertTrue(np.isfinite(hybrid_result.objective_error))
         self.assertEqual(ml_result.reconstructed_i3.shape, thickness_nm.shape)
         self.assertEqual(hybrid_result.reconstructed_i1.shape, thickness_nm.shape)

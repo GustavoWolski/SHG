@@ -213,6 +213,7 @@ def plot_inverse_method_comparison(
 
     method_styles = {
         "classical": ("-", "black"),
+        "natural": ((0, (3, 1, 1, 1)), "seagreen"),
         "ml": ("--", "royalblue"),
         "hybrid": (":", "darkorange"),
     }

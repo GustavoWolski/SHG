@@ -6,7 +6,7 @@ Projeto em Python para estudar inversao de parametros de SHG (Second-Harmonic Ge
 2. fitting classico com otimizacao global
 3. predicao por machine learning e refinamento hibrido
 
-O objetivo do projeto e gerar curvas SHG simuladas, ajustar parametros opticos a partir dessas curvas e comparar abordagens classicas e baseadas em redes neurais.
+O objetivo do projeto e gerar curvas SHG simuladas, ajustar parametros opticos a partir dessas curvas e comparar abordagens classicas, de computacao natural e baseadas em redes neurais.
 
 ## Visao Geral
 
@@ -165,12 +165,13 @@ O comando abre graficos de transmissao e reflexao normalizadas.
 
 ### 2. Rodar fitting experimental
 
-O subcomando `fit` agora pode operar em quatro modos:
+O subcomando `fit` agora pode operar em cinco modos:
 
 - `--method classical`: fitting classico com `differential_evolution`
+- `--method natural`: fitting por computacao natural com `dual_annealing`
 - `--method ml`: predicao direta pela rede treinada
 - `--method hybrid`: rede + refinamento fisico local
-- `--method compare`: roda os tres e indica o melhor pelo erro observado
+- `--method compare`: roda os quatro e indica o melhor pelo erro observado
 
 Exemplo classico:
 
@@ -183,6 +184,7 @@ Importante:
 - se voce nao passar `--data-path`, `fit` usa dados experimentais de exemplo definidos no proprio codigo
 - o modo `classical` abre comparacao visual e mapa de erro
 - os modos `ml`, `hybrid` e `compare` exigem `--model-path`
+- o modo `natural` nao exige modelo treinado e usa busca global estocastica (`dual_annealing`)
 
 Exemplo `ml`:
 
@@ -194,6 +196,12 @@ Exemplo `hybrid`:
 
 ```powershell
 python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --local-bounds neighborhood --neighborhood-fraction 0.1
+```
+
+Exemplo `natural`:
+
+```powershell
+python main.py fit --method natural --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 7
 ```
 
 Exemplo `compare`:
@@ -256,7 +264,7 @@ Para dado experimental real, o melhor resultado normalmente nao vem de um unico 
 6. observe se o melhor ajuste encosta nos limites de algum parametro; se isso acontecer, amplie os bounds e rode novamente
 7. se voce pretende usar `ml` ou `hybrid`, gere um dataset sintetico com a mesma malha `d_nm` do experimento usando `--experimental-grid-path`
 8. treine a rede com bounds coerentes com o seu material; a rede nao consegue extrapolar bem para fora do espaco sintetico em que foi treinada
-9. use `compare` para decidir entre `classical`, `ml` e `hybrid` pelo erro observado no seu experimento
+9. use `compare` para decidir entre `classical`, `natural`, `ml` e `hybrid` pelo erro observado no seu experimento
 
 Sinais de que voce ainda precisa adaptar melhor o pipeline:
 
@@ -337,6 +345,7 @@ python main.py compare-methods --model-path models/shg_mlp.npz --dataset-path sr
 Esse comando compara:
 
 - fitting classico
+- fitting natural
 - ML direto
 - metodo hibrido
 
@@ -423,7 +432,7 @@ Observacao importante:
    b) gerar dataset sintetico para treinar a MLP
 5. Treinar o modelo de ML
 6. Avaliar o modelo em previsao de parametros e reconstrucao fisica
-7. Comparar metodo classico, ML e hibrido
+7. Comparar metodo classico, natural, ML e hibrido
 ```
 
 Fluxo em uma linha:

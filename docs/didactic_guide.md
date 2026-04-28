@@ -129,6 +129,12 @@ Desvantagem:
 
 - costuma ser lento, especialmente quando se avaliam muitas amostras
 
+Como alternativa de computacao natural, o projeto tambem oferece:
+
+- `dual_annealing`
+
+Ele mantem a mesma funcao objetivo fisica do metodo classico, mas usa outra estrategia estocastica global para tentar escapar de minimos locais e acelerar a busca em alguns cenarios.
+
 Observacao pratica importante para laboratorio:
 
 - o fit so e confiavel se a janela de busca dos parametros fizer sentido para o material real
@@ -254,7 +260,7 @@ Mas isso so funciona bem quando:
 - a malha de espessuras do treino se parece com a malha do laboratorio
 - o experimento nao esta muito fora do dominio coberto pelas simulacoes sinteticas
 
-## Por que comparar classico, ML e hibrido
+## Por que comparar classico, natural, ML e hibrido
 
 Cada abordagem tem um perfil diferente:
 
