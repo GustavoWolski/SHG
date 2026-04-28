@@ -15,7 +15,7 @@ from typing import Literal, Optional
 import numpy as np
 import numpy.typing as npt
 
-from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit
+from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit, run_natural_fit
 from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function, normalize_shg_curves
 from src.ml.datasets import build_input_features
 from src.ml.models import MLPRegressor
@@ -24,7 +24,7 @@ from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
-MethodName = Literal["classical", "ml", "hybrid"]
+MethodName = Literal["classical", "natural", "ml", "hybrid"]
 LocalBoundsMode = Literal["global", "neighborhood"]
 
 
@@ -360,6 +360,52 @@ def run_ml_inverse_method(
     )
 
 
+def run_natural_inverse_method(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    lambda_m: float,
+    normalization_strategy: NormalizationStrategy,
+    i3_mask: BoolArray,
+    i1_mask: BoolArray,
+    seed: Optional[int] = None,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    channel_weights: ChannelWeights = None,
+) -> ExperimentalMethodResult:
+    """Run natural-computation SHG inversion on one experiment."""
+    start_time = time.perf_counter()
+    fit_result = run_natural_fit(
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        lambda_m=lambda_m,
+        bounds=bounds,
+        normalization_strategy=normalization_strategy,
+        seed=seed,
+        verbose=False,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        channel_weights=channel_weights,
+    )
+    runtime_seconds = time.perf_counter() - start_time
+    return _build_result(
+        method_name="natural",
+        parameter_vector=fit_result.parameter_vector,
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        lambda_m=lambda_m,
+        normalization_strategy=normalization_strategy,
+        runtime_seconds=runtime_seconds,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        channel_mask=(_channel_observed(i3_mask), _channel_observed(i1_mask)),
+        used_interpolation=False,
+        message=fit_result.message,
+        channel_weights=channel_weights,
+    )
+
+
 def run_hybrid_inverse_method(
     d_exp: FloatArray,
     i3_exp: FloatArray,
@@ -441,6 +487,18 @@ def compare_experimental_methods(
 
     results = {
         "classical": run_classical_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=seed,
+            bounds=bounds,
+            channel_weights=channel_weights,
+        ),
+        "natural": run_natural_inverse_method(
             d_exp=d_exp,
             i3_exp=i3_exp,
             i1_exp=i1_exp,

@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.data.synthetic_generator import PARAMETER_NAMES
-from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit
+from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit, run_natural_fit
 from src.inverse.objective import NormalizationStrategy
 from src.ml.datasets import SHGDataset, build_input_features, full_observation_masks
 from src.ml.evaluate import (
@@ -69,7 +69,7 @@ class MethodComparisonResult:
 
 @dataclass
 class ComparisonReport:
-    """Comparison report across classical, ML and hybrid SHG inversion methods."""
+    """Comparison report across classical, natural, ML and hybrid SHG inversion methods."""
 
     methods: dict[str, MethodComparisonResult]
 
@@ -166,6 +166,37 @@ def _run_ml_method(dataset: SHGDataset, model: MLPRegressor) -> MethodComparison
     total_seconds = time.perf_counter() - start_time
 
     per_sample_seconds = np.full(dataset.num_samples, total_seconds / dataset.num_samples, dtype=np.float64)
+    return _build_method_result(dataset, predictions, per_sample_seconds)
+
+
+def _run_natural_method(
+    dataset: SHGDataset,
+    normalization_strategy: NormalizationStrategy,
+    seed: Optional[int] = None,
+    show_progress: bool = True,
+) -> MethodComparisonResult:
+    """Run sample-wise natural-computation SHG inversion with dual annealing."""
+    num_samples = dataset.num_samples
+    predictions = np.zeros_like(dataset.targets)
+    per_sample_seconds = np.zeros(num_samples, dtype=np.float64)
+
+    for sample_index in range(num_samples):
+        start_time = time.perf_counter()
+        fit_result = run_natural_fit(
+            d_exp=dataset.d_nm,
+            i3_exp=dataset.i3[sample_index],
+            i1_exp=dataset.i1[sample_index],
+            lambda_m=dataset.lambda_m,
+            normalization_strategy=normalization_strategy,
+            seed=None if seed is None else seed + sample_index,
+            verbose=False,
+        )
+        per_sample_seconds[sample_index] = time.perf_counter() - start_time
+        predictions[sample_index] = fit_result.parameter_vector
+
+        if show_progress:
+            _print_progress("Natural fit", sample_index + 1, num_samples)
+
     return _build_method_result(dataset, predictions, per_sample_seconds)
 
 
@@ -307,8 +338,16 @@ def plot_timing_comparison(report: ComparisonReport, output_path: str | Path) ->
     method_names = list(report.methods.keys())
     mean_times = [report.methods[method_name].timing.mean_seconds_per_sample for method_name in method_names]
 
+    method_colors = {
+        "classical": "black",
+        "natural": "seagreen",
+        "ml": "royalblue",
+        "hybrid": "darkorange",
+    }
+    colors = [method_colors.get(method_name, "gray") for method_name in method_names]
+
     figure, axis = plt.subplots(figsize=(8, 5))
-    axis.bar(method_names, mean_times, color=["black", "royalblue", "darkorange"])
+    axis.bar(method_names, mean_times, color=colors)
     axis.set_ylabel("Tempo medio por amostra (s)")
     axis.set_title("Comparacao de custo computacional")
     axis.grid(True, axis="y", alpha=0.3)
@@ -352,8 +391,16 @@ def plot_reconstruction_error_comparison(report: ComparisonReport, output_path: 
     method_names = list(report.methods.keys())
     total_errors = [report.methods[method_name].reconstruction_metrics.mean_total_error for method_name in method_names]
 
+    method_colors = {
+        "classical": "black",
+        "natural": "seagreen",
+        "ml": "royalblue",
+        "hybrid": "darkorange",
+    }
+    colors = [method_colors.get(method_name, "gray") for method_name in method_names]
+
     figure, axis = plt.subplots(figsize=(8, 5))
-    axis.bar(method_names, total_errors, color=["black", "royalblue", "darkorange"])
+    axis.bar(method_names, total_errors, color=colors)
     axis.set_ylabel("Erro medio total de reconstrucao")
     axis.set_title("Comparacao de reconstrucao fisica")
     axis.grid(True, axis="y", alpha=0.3)
@@ -413,6 +460,7 @@ def plot_method_reconstruction_examples(
 
     method_styles = {
         "classical": ("--", "black"),
+        "natural": ((0, (3, 1, 1, 1)), "seagreen"),
         "ml": ("-.", "royalblue"),
         "hybrid": (":", "darkorange"),
     }
@@ -472,10 +520,16 @@ def compare_methods(
     examples_per_group: int = 1,
     show_progress: bool = True,
 ) -> ComparisonReport:
-    """Compare classical, ML and hybrid SHG inverse methods on a test dataset."""
+    """Compare classical, natural, ML and hybrid SHG inverse methods on a test dataset."""
     report = ComparisonReport(
         methods={
             "classical": _run_classical_method(
+                dataset=dataset,
+                normalization_strategy=normalization_strategy,
+                seed=classical_seed,
+                show_progress=show_progress,
+            ),
+            "natural": _run_natural_method(
                 dataset=dataset,
                 normalization_strategy=normalization_strategy,
                 seed=classical_seed,
