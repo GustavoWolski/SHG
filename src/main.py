@@ -297,7 +297,12 @@ def build_compare_methods_parser(subparsers: argparse._SubParsersAction) -> None
         default=0.1,
         help="Fracao da largura dos bounds globais usada na vizinhanca local.",
     )
-    parser.add_argument("--classical-seed", type=int, default=None, help="Seed base para o fitting classico.")
+    parser.add_argument(
+        "--classical-seed",
+        type=int,
+        default=None,
+        help="Seed base para fits estocasticos na comparacao; nome mantido por compatibilidade.",
+    )
     parser.add_argument(
         "--max-samples",
         type=int,

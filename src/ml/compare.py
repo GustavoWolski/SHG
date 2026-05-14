@@ -131,7 +131,7 @@ def _run_classical_method(
     seed: Optional[int] = None,
     show_progress: bool = True,
 ) -> MethodComparisonResult:
-    """Run sample-wise classical SHG inversion with differential evolution."""
+    """Run sample-wise classical SHG inversion with least squares."""
     num_samples = dataset.num_samples
     predictions = np.zeros_like(dataset.targets)
     per_sample_seconds = np.zeros(num_samples, dtype=np.float64)
@@ -175,7 +175,7 @@ def _run_natural_method(
     seed: Optional[int] = None,
     show_progress: bool = True,
 ) -> MethodComparisonResult:
-    """Run sample-wise natural-computation SHG inversion with dual annealing."""
+    """Run sample-wise natural-computation SHG inversion with differential evolution."""
     num_samples = dataset.num_samples
     predictions = np.zeros_like(dataset.targets)
     per_sample_seconds = np.zeros(num_samples, dtype=np.float64)

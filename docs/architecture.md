@@ -126,8 +126,8 @@ Papel:
 
 Otimizadores usados hoje:
 
-- global: `scipy.optimize.differential_evolution`
-- global por computacao natural: `scipy.optimize.dual_annealing`
+- classico local: `scipy.optimize.least_squares`
+- global por computacao natural: `scipy.optimize.differential_evolution`
 - local: `scipy.optimize.minimize(..., method="L-BFGS-B")`
 
 #### `src/inverse/methods.py`
@@ -350,8 +350,8 @@ SHGParams + d_nm
 
 ```text
 curvas experimentais
--> error_function(...)
--> differential_evolution
+-> residual_vector(...)
+-> least_squares
 -> melhor vetor de parametros
 -> FitResult
 -> curvas simuladas do melhor ajuste

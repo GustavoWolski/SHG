@@ -97,8 +97,8 @@ Observacao:
 
 Use o subcomando `fit` para executar a inversao experimental em um de cinco modos:
 
-- `classical`: fitting classico com `differential_evolution`
-- `natural`: otimizacao global por computacao natural (`dual_annealing`)
+- `classical`: fitting classico local com minimos quadrados (`least_squares`)
+- `natural`: otimizacao global por computacao natural (`differential_evolution`)
 - `ml`: predicao direta da rede treinada
 - `hybrid`: rede neural seguida de refinamento fisico local
 - `compare`: executa os quatro modos acima e aponta o melhor pelo erro observado

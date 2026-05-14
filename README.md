@@ -17,7 +17,7 @@ Em termos simples, o projeto tenta responder esta pergunta:
 Para isso, o repositorio combina:
 
 - um modelo fisico direto que simula SHG
-- um problema inverso classico resolvido com `differential_evolution`
+- um problema inverso classico resolvido com minimos quadrados (`least_squares`)
 - uma MLP simples para prever parametros diretamente
 - uma abordagem hibrida que usa a rede neural como chute inicial e depois refina com fisica
 
@@ -167,8 +167,8 @@ O comando abre graficos de transmissao e reflexao normalizadas.
 
 O subcomando `fit` agora pode operar em cinco modos:
 
-- `--method classical`: fitting classico com `differential_evolution`
-- `--method natural`: fitting por computacao natural com `dual_annealing`
+- `--method classical`: fitting classico local com minimos quadrados (`least_squares`)
+- `--method natural`: fitting por computacao natural com `differential_evolution`
 - `--method ml`: predicao direta pela rede treinada
 - `--method hybrid`: rede + refinamento fisico local
 - `--method compare`: roda os quatro e indica o melhor pelo erro observado
@@ -184,7 +184,7 @@ Importante:
 - se voce nao passar `--data-path`, `fit` usa dados experimentais de exemplo definidos no proprio codigo
 - o modo `classical` abre comparacao visual e mapa de erro
 - os modos `ml`, `hybrid` e `compare` exigem `--model-path`
-- o modo `natural` nao exige modelo treinado e usa busca global estocastica (`dual_annealing`)
+- o modo `natural` nao exige modelo treinado e usa busca global estocastica (`differential_evolution`)
 
 Exemplo `ml`:
 
@@ -487,7 +487,7 @@ Assim o `matplotlib` usa backend nao interativo e os comandos com graficos nao t
 
 Causa:
 
-- `differential_evolution` e um otimizador global
+- `differential_evolution` e um otimizador global usado no metodo natural
 - a comparacao metodologica roda fitting classico amostra por amostra
 
 Solucao:
