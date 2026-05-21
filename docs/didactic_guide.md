@@ -116,18 +116,25 @@ No projeto:
 3. a funcao objetivo calcula o erro
 4. o otimizador tenta diminuir esse erro
 
-O baseline principal e:
+O baseline classico local e:
 
-- `differential_evolution`
+- minimos quadrados com `least_squares`
 
 Por que usar esse metodo?
 
-- ele faz busca global
-- reduz a chance de ficar preso logo no primeiro minimo local
+- ele e simples, rapido e facil de interpretar
+- representa um ajuste parametrico tradicional entre curva simulada e curva observada
 
 Desvantagem:
 
-- costuma ser lento, especialmente quando se avaliam muitas amostras
+- depende bastante do chute inicial
+- pode ficar preso em minimos locais
+
+Como alternativa de computacao natural, o projeto tambem oferece:
+
+- `differential_evolution`
+
+Ele mantem a mesma funcao objetivo fisica do metodo classico, mas usa uma estrategia estocastica global para tentar escapar de minimos locais.
 
 Observacao pratica importante para laboratorio:
 
@@ -254,7 +261,7 @@ Mas isso so funciona bem quando:
 - a malha de espessuras do treino se parece com a malha do laboratorio
 - o experimento nao esta muito fora do dominio coberto pelas simulacoes sinteticas
 
-## Por que comparar classico, ML e hibrido
+## Por que comparar classico, natural, ML e hibrido
 
 Cada abordagem tem um perfil diferente:
 

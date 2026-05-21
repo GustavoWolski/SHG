@@ -56,7 +56,7 @@ Teste em que os parametros previstos sao inseridos novamente no forward model pa
 
 ## Baseline
 
-Metodo de referencia usado como comparacao principal. Neste projeto, o baseline do problema inverso fisico e o fitting classico com `differential_evolution`.
+Metodo de referencia usado como comparacao principal. Neste projeto, o baseline classico do problema inverso fisico e um fitting local por minimos quadrados com `least_squares`.
 
 ## Metodo hibrido
 
@@ -80,7 +80,7 @@ Limites minimo e maximo usados para cada parametro. Eles definem o espaco de bus
 
 ## Differential evolution
 
-Otimizador global usado no fitting classico. Ele testa e combina candidatos ao longo de varias iteracoes para buscar menor erro.
+Otimizador global usado no metodo natural. Ele testa e combina candidatos ao longo de varias iteracoes para buscar menor erro.
 
 ## L-BFGS-B
 

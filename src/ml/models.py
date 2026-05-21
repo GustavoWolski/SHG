@@ -37,6 +37,13 @@ class MLPRegressor:
     def predict(self, features: FloatArray) -> FloatArray:
         """Predict SHG physical parameters from masked features."""
         feature_array = np.asarray(features, dtype=np.float64)
+        if feature_array.ndim != 2:
+            raise ValueError("features must be a 2D array with shape (samples, input_dim).")
+        if feature_array.shape[1] != self.config.input_dim:
+            raise ValueError(
+                f"Model input_dim is {self.config.input_dim}, but received features with "
+                f"{feature_array.shape[1]} columns."
+            )
         normalized_features = (feature_array - self.input_mean) / self.input_std
 
         activations = normalized_features

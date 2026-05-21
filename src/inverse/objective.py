@@ -84,7 +84,12 @@ def normalize_shg_curves(
         i1_exp_scale = _safe_channel_scale(i1_exp[observed_i1_mask]) if np.any(observed_i1_mask) else 1.0
         i3_sim_scale = _safe_channel_scale(i3_sim[observed_i3_mask]) if np.any(observed_i3_mask) else 1.0
         i1_sim_scale = _safe_channel_scale(i1_sim[observed_i1_mask]) if np.any(observed_i1_mask) else 1.0
-        if None in (i3_exp_scale, i1_exp_scale, i3_sim_scale, i1_sim_scale):
+        if (
+            i3_exp_scale is None
+            or i1_exp_scale is None
+            or i3_sim_scale is None
+            or i1_sim_scale is None
+        ):
             return None
         return (
             i3_exp / i3_exp_scale,
@@ -97,6 +102,19 @@ def normalize_shg_curves(
 
 
 ChannelWeights = Optional[tuple[float, float]]
+
+
+def _penalty_residual_vector(
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    i3_mask: Optional[BoolArray],
+    i1_mask: Optional[BoolArray],
+) -> FloatArray:
+    """Return a fixed-size residual vector for invalid least-squares candidates."""
+    observed_i3_mask = _resolve_observation_mask(i3_exp, i3_mask)
+    observed_i1_mask = _resolve_observation_mask(i1_exp, i1_mask)
+    residual_count = int(np.count_nonzero(observed_i3_mask) + np.count_nonzero(observed_i1_mask))
+    return np.full(max(residual_count, 1), np.sqrt(LARGE_ERROR_PENALTY), dtype=np.float64)
 
 
 def error_function(
@@ -150,3 +168,55 @@ def error_function(
     if not channel_errors:
         return LARGE_ERROR_PENALTY
     return float(sum(channel_errors))
+
+
+def residual_vector(
+    x: Sequence[float],
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    lambda_m: float,
+    normalization_strategy: NormalizationStrategy = "global",
+    i3_mask: Optional[BoolArray] = None,
+    i1_mask: Optional[BoolArray] = None,
+    channel_weights: ChannelWeights = None,
+    ) -> FloatArray:
+    """Build weighted normalized residuals for least-squares fitting.
+
+    The residual scaling keeps ``sum(residuals ** 2)`` on the same scale as
+    ``error_function``: weighted mean squared error for each observed channel.
+    """
+    params = build_shg_params(x, lambda_m)
+    w_i3, w_i1 = channel_weights if channel_weights is not None else (1.0, 1.0)
+
+    try:
+        i3_sim, i1_sim = simulate_shg(params, d_exp)
+    except (FloatingPointError, ValueError, ZeroDivisionError):
+        return _penalty_residual_vector(i3_exp, i1_exp, i3_mask, i1_mask)
+
+    normalized_curves = normalize_shg_curves(
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        i3_sim=i3_sim,
+        i1_sim=i1_sim,
+        strategy=normalization_strategy,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+    )
+    if normalized_curves is None:
+        return _penalty_residual_vector(i3_exp, i1_exp, i3_mask, i1_mask)
+
+    i3_exp_norm, i1_exp_norm, i3_sim_norm, i1_sim_norm = normalized_curves
+    observed_i3_mask = _resolve_observation_mask(i3_exp, i3_mask)
+    observed_i1_mask = _resolve_observation_mask(i1_exp, i1_mask)
+
+    residuals: list[FloatArray] = []
+    if np.any(observed_i3_mask):
+        i3_delta = i3_exp_norm[observed_i3_mask] - i3_sim_norm[observed_i3_mask]
+        residuals.append(np.sqrt(w_i3 / i3_delta.size) * i3_delta)
+    if np.any(observed_i1_mask):
+        i1_delta = i1_exp_norm[observed_i1_mask] - i1_sim_norm[observed_i1_mask]
+        residuals.append(np.sqrt(w_i1 / i1_delta.size) * i1_delta)
+    if not residuals:
+        return _penalty_residual_vector(i3_exp, i1_exp, i3_mask, i1_mask)
+    return np.concatenate(residuals).astype(np.float64)

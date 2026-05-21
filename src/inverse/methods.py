@@ -15,7 +15,7 @@ from typing import Literal, Optional
 import numpy as np
 import numpy.typing as npt
 
-from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit
+from src.inverse.fitters import DEFAULT_BOUNDS, refine_fit_locally, run_fit, run_natural_fit
 from src.inverse.objective import ChannelWeights, NormalizationStrategy, build_shg_params, error_function, normalize_shg_curves
 from src.ml.datasets import build_input_features
 from src.ml.models import MLPRegressor
@@ -24,7 +24,7 @@ from src.utils.io import ensure_directory
 
 FloatArray = npt.NDArray[np.float64]
 BoolArray = npt.NDArray[np.bool_]
-MethodName = Literal["classical", "ml", "hybrid"]
+MethodName = Literal["classical", "natural", "ml", "hybrid"]
 LocalBoundsMode = Literal["global", "neighborhood"]
 
 
@@ -183,6 +183,26 @@ def _build_ml_features(
     return features, channel_mask, bool(i3_interpolated or i1_interpolated)
 
 
+def _validate_ml_feature_compatibility(model: MLPRegressor, features: FloatArray, d_nm: FloatArray) -> None:
+    """Ensure the fixed-size MLP matches the experimental thickness grid."""
+    feature_dim = int(features.shape[1])
+    expected_dim = int(model.config.input_dim)
+    if feature_dim == expected_dim:
+        return
+
+    expected_points_message = "unknown"
+    if expected_dim >= 2 and (expected_dim - 2) % 2 == 0:
+        expected_points_message = str((expected_dim - 2) // 2)
+    actual_points = int(np.asarray(d_nm).size)
+    raise ValueError(
+        "The trained ML model is incompatible with this experimental grid: "
+        f"model input_dim={expected_dim} expects {expected_points_message} thickness points, "
+        f"but this experiment has {actual_points} points (feature_dim={feature_dim}). "
+        "Generate a synthetic dataset with --experimental-grid-path using the same data file, "
+        "then retrain the model and pass that new --model-path."
+    )
+
+
 def _build_result(
     method_name: MethodName,
     parameter_vector: FloatArray,
@@ -328,6 +348,7 @@ def run_ml_inverse_method(
 ) -> ExperimentalMethodResult:
     """Run direct MLP-based parameter prediction on one experiment."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
+    _validate_ml_feature_compatibility(model, features, d_exp)
     start_time = time.perf_counter()
     prediction = model.predict(features)[0]
     runtime_seconds = time.perf_counter() - start_time
@@ -360,6 +381,52 @@ def run_ml_inverse_method(
     )
 
 
+def run_natural_inverse_method(
+    d_exp: FloatArray,
+    i3_exp: FloatArray,
+    i1_exp: FloatArray,
+    lambda_m: float,
+    normalization_strategy: NormalizationStrategy,
+    i3_mask: BoolArray,
+    i1_mask: BoolArray,
+    seed: Optional[int] = None,
+    bounds: Optional[list[tuple[float, float]]] = None,
+    channel_weights: ChannelWeights = None,
+) -> ExperimentalMethodResult:
+    """Run natural-computation SHG inversion on one experiment."""
+    start_time = time.perf_counter()
+    fit_result = run_natural_fit(
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        lambda_m=lambda_m,
+        bounds=bounds,
+        normalization_strategy=normalization_strategy,
+        seed=seed,
+        verbose=False,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        channel_weights=channel_weights,
+    )
+    runtime_seconds = time.perf_counter() - start_time
+    return _build_result(
+        method_name="natural",
+        parameter_vector=fit_result.parameter_vector,
+        d_exp=d_exp,
+        i3_exp=i3_exp,
+        i1_exp=i1_exp,
+        lambda_m=lambda_m,
+        normalization_strategy=normalization_strategy,
+        runtime_seconds=runtime_seconds,
+        i3_mask=i3_mask,
+        i1_mask=i1_mask,
+        channel_mask=(_channel_observed(i3_mask), _channel_observed(i1_mask)),
+        used_interpolation=False,
+        message=fit_result.message,
+        channel_weights=channel_weights,
+    )
+
+
 def run_hybrid_inverse_method(
     d_exp: FloatArray,
     i3_exp: FloatArray,
@@ -375,6 +442,7 @@ def run_hybrid_inverse_method(
 ) -> ExperimentalMethodResult:
     """Run MLP initialization followed by bounded physical local refinement."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
+    _validate_ml_feature_compatibility(model, features, d_exp)
     start_time = time.perf_counter()
     initial_guess = model.predict(features)[0]
     local_bounds = _compute_local_bounds(
@@ -441,6 +509,18 @@ def compare_experimental_methods(
 
     results = {
         "classical": run_classical_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=seed,
+            bounds=bounds,
+            channel_weights=channel_weights,
+        ),
+        "natural": run_natural_inverse_method(
             d_exp=d_exp,
             i3_exp=i3_exp,
             i1_exp=i1_exp,

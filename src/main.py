@@ -9,7 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from src.data.synthetic_generator import DEFAULT_PARAMETER_BOUNDS
-from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
+from src.data.loaders import load_experimental_shg_data, load_experimental_thickness_grid, load_synthetic_dataset
 from src.ml.datasets import from_synthetic_dataset, save_dataset_split, split_dataset, subset_dataset
 from src.ml.models import load_model
 from src.physics.shg_model import SHGParams, simulate_shg
@@ -44,7 +44,7 @@ def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("fit", help="Executa o ajuste inverso com dados internos ou arquivo externo.")
     parser.add_argument(
         "--method",
-        choices=["classical", "ml", "hybrid", "compare"],
+        choices=["classical", "natural", "ml", "hybrid", "compare"],
         default="classical",
         help="Metodo usado na inversao experimental.",
     )
@@ -52,7 +52,7 @@ def build_fit_parser(subparsers: argparse._SubParsersAction) -> None:
         "--data-path",
         type=str,
         default=None,
-        help="Arquivo texto/CSV com colunas d_nm,i3,i1; i3/i1 podem ter valores faltantes.",
+        help="Arquivo texto/CSV com d_nm e pelo menos um canal: i3 (transmissao) e/ou i1 (reflexao).",
     )
     parser.add_argument(
         "--lambda-nm",
@@ -133,13 +133,13 @@ def build_generate_dataset_parser(subparsers: argparse._SubParsersAction) -> Non
         "--experimental-grid-path",
         type=str,
         default=None,
-        help="Arquivo experimental com coluna d_nm para reutilizar a malha de espessuras no dataset sintetico.",
+        help="Arquivo experimental com d_nm para reutilizar a malha no dataset sintetico; outras colunas sao ignoradas.",
     )
     parser.add_argument(
         "--grid-delimiter",
         type=str,
         default=",",
-        help="Delimitador do arquivo usado em --experimental-grid-path.",
+        help="Delimitador do arquivo usado em --experimental-grid-path; use 'whitespace' para .dat separado por espacos.",
     )
     parser.add_argument(
         "--grid-skiprows",
@@ -297,7 +297,12 @@ def build_compare_methods_parser(subparsers: argparse._SubParsersAction) -> None
         default=0.1,
         help="Fracao da largura dos bounds globais usada na vizinhanca local.",
     )
-    parser.add_argument("--classical-seed", type=int, default=None, help="Seed base para o fitting classico.")
+    parser.add_argument(
+        "--classical-seed",
+        type=int,
+        default=None,
+        help="Seed base para fits estocasticos na comparacao; nome mantido por compatibilidade.",
+    )
     parser.add_argument(
         "--max-samples",
         type=int,
@@ -400,6 +405,28 @@ def _require_model_for_fit_method(args: argparse.Namespace) -> None:
         raise ValueError("--model-path is required when --method is ml, hybrid or compare.")
 
 
+def _validate_fit_model_grid(model: object | None, d_exp: FloatArray, method: str) -> None:
+    """Fail fast when a fixed-size ML model does not match the fit grid."""
+    if method not in {"ml", "hybrid", "compare"} or model is None:
+        return
+
+    model_input_dim = int(model.config.input_dim)
+    experimental_input_dim = int(2 * d_exp.size + 2)
+    if model_input_dim == experimental_input_dim:
+        return
+
+    expected_points = "unknown"
+    if model_input_dim >= 2 and (model_input_dim - 2) % 2 == 0:
+        expected_points = str((model_input_dim - 2) // 2)
+    raise ValueError(
+        "The trained ML model is incompatible with this experimental grid: "
+        f"model input_dim={model_input_dim} expects {expected_points} thickness points, "
+        f"but the fit data has {d_exp.size} points (required input_dim={experimental_input_dim}). "
+        "Generate a synthetic dataset with --experimental-grid-path using this data file, "
+        "train a new model from that dataset, and pass the new --model-path."
+    )
+
+
 def _fit_output_paths(output_dir: str | None, method_name: str) -> dict[str, Path]:
     """Build the output paths used to persist fit figures and summaries."""
     if output_dir is None:
@@ -419,6 +446,7 @@ def handle_fit(args: argparse.Namespace) -> None:
         compare_experimental_methods,
         run_classical_inverse_method,
         run_hybrid_inverse_method,
+        run_natural_inverse_method,
         run_ml_inverse_method,
         save_experimental_comparison_summary,
         save_experimental_method_summary,
@@ -428,6 +456,7 @@ def handle_fit(args: argparse.Namespace) -> None:
     d_exp, i3_exp, i1_exp, i3_mask, i1_mask, lambda_m = resolve_fit_data(args)
     normalization_strategy = args.normalization
     model = load_model(args.model_path) if args.model_path is not None else None
+    _validate_fit_model_grid(model, d_exp, args.method)
     fit_bounds: list[tuple[float, float]] = [
         (args.n21w_min, args.n21w_max),
         (args.k21w_min, args.k21w_max),
@@ -494,6 +523,53 @@ def handle_fit(args: argparse.Namespace) -> None:
             print(f"Figura salva em: {output_paths['curves']}")
             print(f"Figura salva em: {output_paths['simulation']}")
             print(f"Figura salva em: {output_paths['error_map']}")
+        return
+
+    if args.method == "natural":
+        output_paths = _fit_output_paths(args.output_dir, "natural")
+        natural_result = run_natural_inverse_method(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            lambda_m=lambda_m,
+            normalization_strategy=normalization_strategy,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            seed=args.seed,
+            bounds=fit_bounds,
+            channel_weights=channel_weights,
+        )
+        print_experimental_method_result(
+            "natural",
+            natural_result.objective_error,
+            natural_result.runtime_seconds,
+            natural_result.parameter_vector,
+        )
+        if natural_result.message:
+            print(natural_result.message)
+        plot_inverse_method_comparison(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_results={"natural": natural_result},
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("curves"),
+        )
+        plot_best_simulation_with_experimental_points(
+            d_exp=d_exp,
+            i3_exp=i3_exp,
+            i1_exp=i1_exp,
+            method_result=natural_result,
+            i3_mask=i3_mask,
+            i1_mask=i1_mask,
+            output_path=output_paths.get("simulation"),
+        )
+        if args.output_dir is not None:
+            summary_path = save_experimental_method_summary(natural_result, output_paths["summary"])
+            print(f"Resumo salvo em: {summary_path}")
+            print(f"Figura salva em: {output_paths['curves']}")
+            print(f"Figura salva em: {output_paths['simulation']}")
         return
 
     if args.method == "ml":
@@ -644,12 +720,11 @@ def handle_generate_dataset(args: argparse.Namespace) -> None:
         "k22w": (args.k22w_min, args.k22w_max),
     }
     if args.experimental_grid_path is not None:
-        experimental_grid = load_experimental_shg_data(
+        d_nm = load_experimental_thickness_grid(
             file_path=args.experimental_grid_path,
             delimiter=args.grid_delimiter,
             skiprows=args.grid_skiprows,
         )
-        d_nm = np.asarray(experimental_grid.d_nm, dtype=np.float64)
     else:
         d_nm = np.arange(0.0, args.d_max_nm + args.d_step_nm, args.d_step_nm, dtype=np.float64)
     dataset = generate_synthetic_dataset(
@@ -805,7 +880,7 @@ def handle_evaluate_ml(args: argparse.Namespace) -> None:
 
 
 def handle_compare_methods(args: argparse.Namespace) -> None:
-    """Compare classical, ML and hybrid SHG inversion methods."""
+    """Compare classical, natural, ML and hybrid SHG inversion methods."""
     from src.ml.compare import compare_methods
 
     dataset = from_synthetic_dataset(load_synthetic_dataset(args.dataset_path))

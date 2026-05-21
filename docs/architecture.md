@@ -36,7 +36,7 @@ Parametros fisicos
 -> curvas i3 e i1
 -> uso em fitting classico ou geracao de dataset
 -> treino e avaliacao de ML
--> comparacao entre classico, ML e hibrido
+-> comparacao entre classico, natural, ML e hibrido
 ```
 
 ## Estrutura real dos modulos
@@ -126,7 +126,8 @@ Papel:
 
 Otimizadores usados hoje:
 
-- global: `scipy.optimize.differential_evolution`
+- classico local: `scipy.optimize.least_squares`
+- global por computacao natural: `scipy.optimize.differential_evolution`
 - local: `scipy.optimize.minimize(..., method="L-BFGS-B")`
 
 #### `src/inverse/methods.py`
@@ -136,6 +137,7 @@ Orquestra os metodos inversos sobre uma unica curva experimental.
 Papel:
 
 - rodar o metodo classico em uma amostra experimental
+- rodar o metodo natural em uma amostra experimental
 - rodar a predição direta da MLP
 - rodar o metodo hibrido com refinamento local
 - comparar os metodos e escolher o melhor pelo erro observado
@@ -267,11 +269,12 @@ Cenarios avaliados:
 
 #### `src/ml/compare.py`
 
-Compara tres abordagens de inversao:
+Compara quatro abordagens de inversao:
 
 1. classica
-2. ML direta
-3. hibrida
+2. natural
+3. ML direta
+4. hibrida
 
 Papel:
 
@@ -347,8 +350,8 @@ SHGParams + d_nm
 
 ```text
 curvas experimentais
--> error_function(...)
--> differential_evolution
+-> residual_vector(...)
+-> least_squares
 -> melhor vetor de parametros
 -> FitResult
 -> curvas simuladas do melhor ajuste

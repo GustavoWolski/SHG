@@ -31,7 +31,7 @@ Depois, o projeto ainda testa uma quarta ideia pratica dentro da comparacao:
 
 Uma forma curta de apresentar:
 
-"Este projeto estuda inversao de parametros em SHG. Primeiro ele usa um modelo fisico direto para simular curvas de transmissao e reflexao. Depois compara tres estrategias para recuperar os parametros a partir dessas curvas: fitting classico com `differential_evolution`, predicao direta com uma MLP e uma abordagem hibrida em que a rede neural fornece um chute inicial para um refinamento fisico local. A comparacao considera erro nos parametros, qualidade de reconstrucao das curvas e custo computacional."
+"Este projeto estuda inversao de parametros em SHG. Primeiro ele usa um modelo fisico direto para simular curvas de transmissao e reflexao. Depois compara estrategias para recuperar os parametros a partir dessas curvas: fitting classico local por minimos quadrados, busca global por computacao natural com `differential_evolution`, predicao direta com uma MLP e uma abordagem hibrida em que a rede neural fornece um chute inicial para um refinamento fisico local. A comparacao considera erro nos parametros, qualidade de reconstrucao das curvas e custo computacional."
 
 ## Papel da fisica
 

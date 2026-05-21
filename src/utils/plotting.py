@@ -104,7 +104,7 @@ def plot_error_map(
     image = axis.imshow(
         error_map,
         origin="lower",
-        extent=[n_vals.min(), n_vals.max(), k_vals.min(), k_vals.max()],
+        extent=(float(n_vals.min()), float(n_vals.max()), float(k_vals.min()), float(k_vals.max())),
         aspect="auto",
     )
     fig.colorbar(image, ax=axis, label="Erro")
@@ -213,6 +213,7 @@ def plot_inverse_method_comparison(
 
     method_styles = {
         "classical": ("-", "black"),
+        "natural": ((0, (3, 1, 1, 1)), "seagreen"),
         "ml": ("--", "royalblue"),
         "hybrid": (":", "darkorange"),
     }
@@ -229,9 +230,23 @@ def plot_inverse_method_comparison(
         if normalized_curves is None:
             continue
         _, _, i3_sim_norm, i1_sim_norm = normalized_curves
+        
+        # Validate array shapes and types before plotting
+        d_exp_arr = np.asarray(d_exp, dtype=np.float64)
+        i3_sim_norm_arr = np.asarray(i3_sim_norm, dtype=np.float64)
+        i1_sim_norm_arr = np.asarray(i1_sim_norm, dtype=np.float64)
+        
+        if d_exp_arr.ndim == 0 or i3_sim_norm_arr.ndim == 0 or i1_sim_norm_arr.ndim == 0:
+            # Skip if any array is a scalar
+            continue
+        
+        if d_exp_arr.size != i3_sim_norm_arr.size or d_exp_arr.size != i1_sim_norm_arr.size:
+            # Skip if array sizes don't match
+            continue
+        
         line_style, color = method_styles.get(method_name, ("-", None))
-        axes[0].plot(d_exp, i3_sim_norm, line_style, color=color, linewidth=1.8, label=method_name)
-        axes[1].plot(d_exp, i1_sim_norm, line_style, color=color, linewidth=1.8, label=method_name)
+        axes[0].plot(d_exp_arr, i3_sim_norm_arr, linestyle=line_style, color=color, linewidth=1.8, label=method_name)
+        axes[1].plot(d_exp_arr, i1_sim_norm_arr, linestyle=line_style, color=color, linewidth=1.8, label=method_name)
 
     axes[0].set_ylabel("T (norm)")
     axes[0].set_title("Comparacao de metodos inversos em i3")
