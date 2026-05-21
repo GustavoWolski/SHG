@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from src.data.loaders import load_experimental_shg_data, load_synthetic_dataset
+from src.data.loaders import load_experimental_shg_data, load_experimental_thickness_grid, load_synthetic_dataset
 from src.data.synthetic_generator import generate_synthetic_dataset, save_synthetic_dataset
 from src.inverse.objective import error_function
 from src.inverse.methods import run_hybrid_inverse_method, run_ml_inverse_method, run_natural_inverse_method
@@ -99,6 +99,27 @@ class SmokeTests(unittest.TestCase):
         np.testing.assert_array_almost_equal(loaded_standard.i3, loaded_swapped.i3)
         np.testing.assert_array_almost_equal(loaded_standard.i1, loaded_swapped.i1)
         np.testing.assert_array_almost_equal(loaded_standard.d_nm, loaded_swapped.d_nm)
+
+    def test_experimental_loader_accepts_reflection_only_header(self) -> None:
+        """Reflection-only files should load with i3 masked out."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_path = Path(temporary_directory) / "reflection_only.csv"
+            data_path.write_text("d_nm,i1\n10,0.2\n20,0.3\n30,\n", encoding="utf-8")
+            loaded = load_experimental_shg_data(data_path)
+
+        np.testing.assert_array_almost_equal(loaded.d_nm, np.array([10.0, 20.0, 30.0], dtype=np.float64))
+        self.assertTrue(np.all(np.isnan(loaded.i3)))
+        self.assertTrue(np.array_equal(loaded.i3_mask, np.array([False, False, False], dtype=bool)))
+        self.assertTrue(np.array_equal(loaded.i1_mask, np.array([True, True, False], dtype=bool)))
+
+    def test_experimental_thickness_grid_uses_first_numeric_column(self) -> None:
+        """Grid loading should work with whitespace-separated reflection data."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            data_path = Path(temporary_directory) / "reflection_only.dat"
+            data_path.write_text("65 0.16\n80 0.22\n100 0.29\n", encoding="utf-8")
+            d_nm = load_experimental_thickness_grid(data_path, delimiter="whitespace")
+
+        np.testing.assert_array_almost_equal(d_nm, np.array([65.0, 80.0, 100.0], dtype=np.float64))
 
     def test_objective_supports_missing_experimental_values(self) -> None:
         """The inverse objective should ignore missing i3/i1 samples through masks."""
@@ -256,6 +277,50 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(ml_result.reconstructed_i3.shape, thickness_nm.shape)
         self.assertEqual(hybrid_result.reconstructed_i1.shape, thickness_nm.shape)
 
+    def test_ml_fit_rejects_incompatible_experimental_grid(self) -> None:
+        """ML methods should explain when the model was trained on another grid length."""
+        train_thickness_nm = np.array([0.0, 10.0, 20.0, 30.0], dtype=np.float64)
+        synthetic_dataset = generate_synthetic_dataset(
+            num_samples=8,
+            d_nm=train_thickness_nm,
+            lambda_m=1560e-9,
+            seed=29,
+            normalization="global",
+            show_progress=False,
+        )
+        dataset = from_synthetic_dataset(synthetic_dataset)
+        model_config = ModelConfig(
+            input_dim=dataset.input_dim,
+            output_dim=dataset.output_dim,
+            hidden_dims=(16,),
+        )
+        training_config = TrainingConfig(
+            epochs=1,
+            batch_size=4,
+            learning_rate=1e-3,
+            seed=29,
+            verbose=False,
+        )
+        training_result = train_model(dataset, model_config, training_config)
+
+        fit_thickness_nm = np.array([0.0, 10.0, 20.0, 30.0, 40.0], dtype=np.float64)
+        i3_exp = np.full(fit_thickness_nm.shape, np.nan, dtype=np.float64)
+        i1_exp = np.linspace(0.1, 0.5, fit_thickness_nm.size, dtype=np.float64)
+        i3_mask = np.zeros(fit_thickness_nm.shape, dtype=bool)
+        i1_mask = np.ones(fit_thickness_nm.shape, dtype=bool)
+
+        with self.assertRaisesRegex(ValueError, "expects 4 thickness points.*has 5 points"):
+            run_ml_inverse_method(
+                d_exp=fit_thickness_nm,
+                i3_exp=i3_exp,
+                i1_exp=i1_exp,
+                lambda_m=1560e-9,
+                model=training_result.model,
+                normalization_strategy="global",
+                i3_mask=i3_mask,
+                i1_mask=i1_mask,
+            )
+
     def test_train_ml_cli_handler(self) -> None:
         """The train-ml subcommand should train and persist artifacts successfully."""
         thickness_nm = np.arange(0.0, 45.0, 5.0, dtype=np.float64)
@@ -351,6 +416,82 @@ class SmokeTests(unittest.TestCase):
             self.assertTrue(np.array_equal(dataset.d_nm, np.array([65.0, 80.0, 100.0, 150.0], dtype=np.float64)))
             self.assertEqual(dataset.i3.shape, (5, 4))
             self.assertEqual(dataset.i1.shape, (5, 4))
+
+    def test_generate_dataset_from_reflection_only_grid(self) -> None:
+        """The dataset generator should accept d_nm,i1 files and still produce both channels."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            experimental_path = Path(temporary_directory) / "reflection_only.csv"
+            experimental_path.write_text(
+                "d_nm,i1\n76.93,0.001763\n91.563,0.005766\n158.954,0.00565\n",
+                encoding="utf-8",
+            )
+            output_path = Path(temporary_directory) / "synthetic_from_reflection_grid.npz"
+
+            parser = build_parser()
+            args = parser.parse_args(
+                [
+                    "generate-dataset",
+                    "--num-samples",
+                    "4",
+                    "--output",
+                    str(output_path),
+                    "--experimental-grid-path",
+                    str(experimental_path),
+                    "--grid-delimiter",
+                    ",",
+                    "--seed",
+                    "21",
+                    "--normalization",
+                    "global",
+                    "--no-progress",
+                ]
+            )
+            handler = resolve_handler(args, parser)
+            self.assertIsNotNone(handler)
+            assert handler is not None
+            handler(args)
+
+            dataset = load_synthetic_dataset(output_path)
+            expected_d_nm = np.array([76.93, 91.563, 158.954], dtype=np.float64)
+            self.assertTrue(np.array_equal(dataset.d_nm, expected_d_nm))
+            self.assertEqual(dataset.i3.shape, (4, 3))
+            self.assertEqual(dataset.i1.shape, (4, 3))
+
+    def test_generate_dataset_from_whitespace_reflection_grid(self) -> None:
+        """The dataset generator should accept two-column .dat grids."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            experimental_path = Path(temporary_directory) / "reflection_only.dat"
+            experimental_path.write_text("65 0.16\n80 0.22\n100 0.29\n150 0.18\n", encoding="utf-8")
+            output_path = Path(temporary_directory) / "synthetic_from_dat_grid.npz"
+
+            parser = build_parser()
+            args = parser.parse_args(
+                [
+                    "generate-dataset",
+                    "--num-samples",
+                    "4",
+                    "--output",
+                    str(output_path),
+                    "--experimental-grid-path",
+                    str(experimental_path),
+                    "--grid-delimiter",
+                    "whitespace",
+                    "--seed",
+                    "23",
+                    "--normalization",
+                    "global",
+                    "--no-progress",
+                ]
+            )
+            handler = resolve_handler(args, parser)
+            self.assertIsNotNone(handler)
+            assert handler is not None
+            handler(args)
+
+            dataset = load_synthetic_dataset(output_path)
+            self.assertTrue(np.array_equal(dataset.d_nm, np.array([65.0, 80.0, 100.0, 150.0], dtype=np.float64)))
+            self.assertEqual(dataset.i3.shape, (4, 4))
+            self.assertEqual(dataset.i1.shape, (4, 4))
 
     def test_fit_ml_cli_saves_summary_and_figure(self) -> None:
         """The fit subcommand should save summary and plot artifacts in ML mode."""

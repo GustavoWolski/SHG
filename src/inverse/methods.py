@@ -183,6 +183,26 @@ def _build_ml_features(
     return features, channel_mask, bool(i3_interpolated or i1_interpolated)
 
 
+def _validate_ml_feature_compatibility(model: MLPRegressor, features: FloatArray, d_nm: FloatArray) -> None:
+    """Ensure the fixed-size MLP matches the experimental thickness grid."""
+    feature_dim = int(features.shape[1])
+    expected_dim = int(model.config.input_dim)
+    if feature_dim == expected_dim:
+        return
+
+    expected_points_message = "unknown"
+    if expected_dim >= 2 and (expected_dim - 2) % 2 == 0:
+        expected_points_message = str((expected_dim - 2) // 2)
+    actual_points = int(np.asarray(d_nm).size)
+    raise ValueError(
+        "The trained ML model is incompatible with this experimental grid: "
+        f"model input_dim={expected_dim} expects {expected_points_message} thickness points, "
+        f"but this experiment has {actual_points} points (feature_dim={feature_dim}). "
+        "Generate a synthetic dataset with --experimental-grid-path using the same data file, "
+        "then retrain the model and pass that new --model-path."
+    )
+
+
 def _build_result(
     method_name: MethodName,
     parameter_vector: FloatArray,
@@ -328,6 +348,7 @@ def run_ml_inverse_method(
 ) -> ExperimentalMethodResult:
     """Run direct MLP-based parameter prediction on one experiment."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
+    _validate_ml_feature_compatibility(model, features, d_exp)
     start_time = time.perf_counter()
     prediction = model.predict(features)[0]
     runtime_seconds = time.perf_counter() - start_time
@@ -421,6 +442,7 @@ def run_hybrid_inverse_method(
 ) -> ExperimentalMethodResult:
     """Run MLP initialization followed by bounded physical local refinement."""
     features, channel_mask, used_interpolation = _build_ml_features(d_exp, i3_exp, i1_exp, i3_mask, i1_mask)
+    _validate_ml_feature_compatibility(model, features, d_exp)
     start_time = time.perf_counter()
     initial_guess = model.predict(features)[0]
     local_bounds = _compute_local_bounds(

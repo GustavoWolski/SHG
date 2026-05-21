@@ -130,7 +130,7 @@ python main.py fit --method hybrid --model-path models/shg_mlp.npz --data-path s
 Exemplo em modo `compare`:
 
 ```powershell
-python main.py fit --method compare --model-path models/shg_mlp.npz --data-path src/data/experimental_fit.csv --lambda-nm 1560 --delimiter "," --normalization global --seed 42 --output-dir outputs/fit_compare --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 0.1 --i1-weight 1.5
+python main.py fit --method compare --model-path models/shg_mlp.npz --data-path src/data/blue_points_fit.csv --lambda-nm 1600 --delimiter "," --normalization separate --seed 42 --output-dir outputs/fit_blue_points --n21w-min 1.0 --n21w-max 6.0 --k21w-min 0.0 --k21w-max 1.0 --n22w-min 1.0 --n22w-max 6.0 --k22w-min 0.0 --k22w-max 1.0 --i3-weight 0.1 --i1-weight 1.5
 ```
 
 Exemplo com bounds fisicos customizados e pesos por canal:
@@ -226,7 +226,7 @@ python main.py generate-dataset --num-samples 500 --output src/data/shg_syntheti
 Exemplo reutilizando as espessuras de um arquivo experimental:
 
 ```powershell
-python main.py generate-dataset --num-samples 5000 --output src/data/shg_dataset_expgrid.npz --lambda-nm 1560 --experimental-grid-path src/data/experimental_fit.csv --grid-delimiter ',' --seed 42 --normalization global
+python main.py generate-dataset --num-samples 10000 --output src/data/shg_dataset_expgrid.npz --lambda-nm 1600 --experimental-grid-path src/data/blue_points_fit.csv --grid-delimiter ',' --seed 42 --normalization separate
 ```
 
 Exemplo com bounds explicitamente definidos:
@@ -272,7 +272,7 @@ Observacao:
 Use `train-ml` para transformar um dataset sintetico em um modelo `.npz`.
 
 ```powershell
-python main.py train-ml --dataset-path src/data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --hidden-dims 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --train-fraction 0.7 --validation-fraction 0.15 --test-fraction 0.15 --seed 42 --split-seed 42 --verbose
+python main.py train-ml --dataset-path src/data/shg_synthetic_dataset.npz --model-path models/shg_mlp.npz --output-dir outputs/train_ml --summary-path outputs/train_ml/training_summary.json --hidden-dims 512 256 128 --epochs 300 --batch-size 64 --learning-rate 1e-3 --weight-decay 1e-5 --gradient-clip 5.0 --train-fraction 0.7 --validation-fraction 0.15 --test-fraction 0.15 --seed 42 --split-seed 42 --verbose
 ```
 
 Observacoes importantes:

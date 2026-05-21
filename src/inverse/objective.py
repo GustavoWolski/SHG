@@ -84,7 +84,12 @@ def normalize_shg_curves(
         i1_exp_scale = _safe_channel_scale(i1_exp[observed_i1_mask]) if np.any(observed_i1_mask) else 1.0
         i3_sim_scale = _safe_channel_scale(i3_sim[observed_i3_mask]) if np.any(observed_i3_mask) else 1.0
         i1_sim_scale = _safe_channel_scale(i1_sim[observed_i1_mask]) if np.any(observed_i1_mask) else 1.0
-        if None in (i3_exp_scale, i1_exp_scale, i3_sim_scale, i1_sim_scale):
+        if (
+            i3_exp_scale is None
+            or i1_exp_scale is None
+            or i3_sim_scale is None
+            or i1_sim_scale is None
+        ):
             return None
         return (
             i3_exp / i3_exp_scale,
@@ -165,7 +170,7 @@ def error_function(
     return float(sum(channel_errors))
 
 
- def residual_vector(
+def residual_vector(
     x: Sequence[float],
     d_exp: FloatArray,
     i3_exp: FloatArray,
@@ -175,7 +180,7 @@ def error_function(
     i3_mask: Optional[BoolArray] = None,
     i1_mask: Optional[BoolArray] = None,
     channel_weights: ChannelWeights = None,
-) -> FloatArray:
+    ) -> FloatArray:
     """Build weighted normalized residuals for least-squares fitting.
 
     The residual scaling keeps ``sum(residuals ** 2)`` on the same scale as
